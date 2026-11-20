@@ -155,7 +155,7 @@ def compile_video(frame_1, frame_2, audio_mp3, ass_file, output_mp4):
         f"[vbar]ass={ass_file}[vout]"
     )
 
-        subprocess.run([
+    subprocess.run([
         "ffmpeg", "-y",
         "-loop", "1", "-t", str(half), "-i", frame_1,
         "-loop", "1", "-t", str(dur - half + 0.5), "-i", frame_2,
