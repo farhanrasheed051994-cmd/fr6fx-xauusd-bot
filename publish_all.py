@@ -62,6 +62,7 @@ def create_temp_public_url(video_path, release_tag):
     subprocess.run(["gh", "release", "create", release_tag, video_path, "--title", "FR6FX Media", "--notes", "Auto"], check=True)
     repo = os.environ["GITHUB_REPOSITORY"]
     fname = os.path.basename(video_path)
+    time.sleep(5)
     return f"https://github.com/{repo}/releases/download/{release_tag}/{fname}"
 def upload_instagram_reel(video_url, caption):
     ig_id = os.environ["IG_USER_ID"].strip()
