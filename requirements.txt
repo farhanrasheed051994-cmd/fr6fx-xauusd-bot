@@ -1,0 +1,10 @@
+google-genai
+yfinance
+pandas
+requests
+playwright
+Pillow
+edge-tts
+faster-whisper
+google-api-python-client
+google-auth-oauthlib
