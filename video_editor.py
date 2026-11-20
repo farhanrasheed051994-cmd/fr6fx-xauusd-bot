@@ -155,15 +155,16 @@ def compile_video(frame_1, frame_2, audio_mp3, ass_file, output_mp4):
         f"[vbar]ass={ass_file}[vout]"
     )
 
-    subprocess.run([
+        subprocess.run([
         "ffmpeg", "-y",
         "-loop", "1", "-t", str(half), "-i", frame_1,
         "-loop", "1", "-t", str(dur - half + 0.5), "-i", frame_2,
         "-i", audio_mp3,
         "-filter_complex", filter_graph,
         "-map", "[vout]", "-map", "2:a",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "22", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "192k", "-shortest",
+        "-c:v", "libx264", "-profile:v", "main", "-level", "4.0", "-preset", "fast", "-crf", "22", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
+        "-movflags", "+faststart", "-shortest",
         output_mp4
     ], check=True)
 
