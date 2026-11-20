@@ -2,8 +2,9 @@ import os
 import json
 import time
 import asyncio
+import threading
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from datetime import datetime, timezone
-from pathlib import Path
 from playwright.async_api import async_playwright
 from google import genai
 from google.genai import types
@@ -63,25 +64,40 @@ def check_previous_call_played_out(smc):
 
 async def capture_tradingview_charts():
     os.makedirs("assets", exist_ok=True)
-    html_uri = Path("tv_chart.html").resolve().as_uri()
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(
-            viewport={"width": 540, "height": 620},
-            device_scale_factor=2
-        )
-        page = await context.new_page()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), SimpleHTTPRequestHandler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
 
-        await page.goto(f"{html_uri}?interval=15", wait_until="networkidle")
-        await page.wait_for_timeout(5000)
-        await page.screenshot(path="assets/tv_15m.png")
+    base_url = f"http://127.0.0.1:{port}/tv_chart.html"
 
-        await page.goto(f"{html_uri}?interval=5", wait_until="networkidle")
-        await page.wait_for_timeout(5000)
-        await page.screenshot(path="assets/tv_5m.png")
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"]
+            )
+            context = await browser.new_context(
+                viewport={"width": 540, "height": 620},
+                device_scale_factor=2,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            )
+            page = await context.new_page()
 
-        await browser.close()
+            await page.goto(f"{base_url}?interval=15", wait_until="domcontentloaded")
+            await page.wait_for_selector("iframe", timeout=15000)
+            await page.wait_for_timeout(8000)
+            await page.screenshot(path="assets/tv_15m.png")
+
+            await page.goto(f"{base_url}?interval=5", wait_until="domcontentloaded")
+            await page.wait_for_selector("iframe", timeout=15000)
+            await page.wait_for_timeout(8000)
+            await page.screenshot(path="assets/tv_5m.png")
+
+            await browser.close()
+    finally:
+        server.shutdown()
 def generate_ai_analysis(smc, news, session_name, played_out):
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
     img_15m = Image.open("assets/tv_15m.png")
