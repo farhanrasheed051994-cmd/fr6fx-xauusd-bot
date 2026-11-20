@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,7 +21,6 @@ def detect_session():
     return "LIVE SESSION"
 
 def check_previous_call_played_out(smc):
-    """Checks if the previous session's Strong Low buy or Strong High sell played out."""
     if not os.path.exists(MEMORY_FILE):
         return None
 
@@ -39,7 +39,6 @@ def check_previous_call_played_out(smc):
     eq = float(prev["equilibrium"])
 
     outcome = None
-    # Did price sweep/tap Strong Low discount floor and rally back to Equilibrium?
     if l6 <= (strong_low + 2.5) and h6 >= eq:
         outcome = {
             "won": True,
@@ -47,7 +46,6 @@ def check_previous_call_played_out(smc):
             "old_session": prev["session"],
             "old_chart": prev["saved_5m_chart"]
         }
-    # Did price tap Strong High premium cap and drop back to Equilibrium?
     elif h6 >= (strong_high - 2.5) and l6 <= eq:
         outcome = {
             "won": True,
@@ -84,7 +82,6 @@ async def capture_tradingview_charts():
         await page.screenshot(path="assets/tv_5m.png")
 
         await browser.close()
-
 def generate_ai_analysis(smc, news, session_name, played_out):
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
     img_15m = Image.open("assets/tv_15m.png")
@@ -134,19 +131,35 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     }}
     """
 
-    response = client.models.generate_content(
-        model="gemini-3.8-flash",
-        contents=[prompt, img_15m, img_5m],
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.4
-        )
-    )
+    models_to_try = ["gemini-3.8-flash", "gemini-2.5-flash-lite", "gemini-3.8-pro"]
+    response = None
+
+    for model_name in models_to_try:
+        for attempt in range(3):
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[prompt, img_15m, img_5m],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.4
+                    )
+                )
+                if response and response.text:
+                    break
+            except Exception as e:
+                print(f"⚠️ {model_name} attempt {attempt+1} busy: {e}")
+                time.sleep(8)
+        if response and response.text:
+            print(f"✅ AI analysis generated using {model_name}")
+            break
+
+    if not response or not response.text:
+        raise RuntimeError("All Gemini models temporarily unavailable—will retry on next run.")
 
     result = json.loads(response.text)
     result["smc"] = smc
 
-    # Save snapshot to predictions.json memory
     history = []
     if os.path.exists(MEMORY_FILE):
         with open(MEMORY_FILE, "r") as f:
