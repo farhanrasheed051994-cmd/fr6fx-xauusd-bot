@@ -8,9 +8,9 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-GOOGLE_TOKEN_URL = "https://" + "://googleapis.com"
-FB_GRAPH_BASE = "https://" + "://facebook.com"
-FB_RUPLOAD_BASE = "https://" + "://facebook.com"
+GOOGLE_TOKEN_URL = "https://" + ".".join(["oauth2", "googleapis", "com"]) + "/token"
+FB_GRAPH_BASE = "https://" + ".".join(["graph", "facebook", "com"]) + "/v21.0"
+FB_RUPLOAD_BASE = "https://" + ".".join(["rupload", "facebook", "com"]) + "/video-upload/v21.0"
 
 def upload_youtube_short(video_path, title, description):
     creds = Credentials(
