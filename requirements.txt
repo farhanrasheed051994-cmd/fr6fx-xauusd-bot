@@ -5,6 +5,7 @@ requests
 playwright
 Pillow
 edge-tts
+gTTS
 faster-whisper
 google-api-python-client
 google-auth-oauthlib
