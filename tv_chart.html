@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body, html { width: 100%; height: 100%; background-color: #0b0e14; overflow: hidden; }
+    #tv_chart { width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <div id="tv_chart"></div>
+  <script type="text/javascript" src="https://tradingview.com"></script>
+  <script type="text/javascript">
+    const params = new URLSearchParams(window.location.search);
+    const interval = params.get("interval") || "15";
+
+    new TradingView.widget({
+      "autosize": true,
+      "symbol": "OANDA:XAUUSD",
+      "interval": interval,
+      "timezone": "Asia/Karachi",
+      "theme": "dark",
+      "style": "1",
+      "locale": "en",
+      "toolbar_bg": "#0b0e14",
+      "enable_publishing": false,
+      "hide_top_toolbar": true,
+      "hide_side_toolbar": true,
+      "hide_legend": false,
+      "save_image": false,
+      "hide_volume": true,
+      "studies": [
+        "MAExp@tv-basicstudies",
+        "MASimple@tv-basicstudies",
+        "RSI@tv-basicstudies"
+      ],
+      "studies_overrides": {
+        "moving average exponential.length": 20,
+        "moving average exponential.ma.color": "#00e5ff",
+        "moving average.length": 50,
+        "moving average.ma.color": "#ff9800"
+      },
+      "overrides": {
+        "paneProperties.background": "#0b0e14",
+        "paneProperties.backgroundType": "solid",
+        "paneProperties.vertGridProperties.color": "#151a24",
+        "paneProperties.horzGridProperties.color": "#151a24",
+        "scalesProperties.textColor": "#d1d4dc",
+        "scalesProperties.lineColor": "#2a2e39",
+        "scalesProperties.showSeriesLastValue": true,
+        "scalesProperties.showCountdown": true,
+        "mainSeriesProperties.candleStyle.upColor": "#089981",
+        "mainSeriesProperties.candleStyle.downColor": "#f23645",
+        "mainSeriesProperties.candleStyle.borderUpColor": "#089981",
+        "mainSeriesProperties.candleStyle.borderDownColor": "#f23645",
+        "mainSeriesProperties.candleStyle.wickUpColor": "#089981",
+        "mainSeriesProperties.candleStyle.wickDownColor": "#f23645"
+      },
+      "container_id": "tv_chart"
+    });
+  </script>
+</body>
+</html>
