@@ -135,7 +135,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     """
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.8-flash",
         contents=[prompt, img_15m, img_5m],
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
