@@ -4,6 +4,7 @@ import json
 import asyncio
 import subprocess
 import edge_tts
+from gtts import gTTS
 from PIL import Image, ImageDraw, ImageFont
 from faster_whisper import WhisperModel
 
@@ -11,12 +12,10 @@ FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
 def build_fr6fx_frame(tv_png_path, out_png_path, session_label, tf_badge, hook_title, smc, is_recap=False):
-    """Wraps real TradingView chart inside a branded 1080x1920 FR6 FX mobile layout."""
     W, H = 1080, 1920
     canvas = Image.new("RGBA", (W, H), (9, 12, 18, 255))
     draw = ImageDraw.Draw(canvas)
 
-    # Subtle institutional background grid
     for x in range(0, W, 90):
         draw.line([(x, 0), (x, H)], fill=(18, 23, 34, 255), width=1)
     for y in range(0, H, 90):
@@ -28,16 +27,13 @@ def build_fr6fx_frame(tv_png_path, out_png_path, session_label, tf_badge, hook_t
     f_pill_val = ImageFont.truetype(FONT_BOLD, 28)
     f_disc = ImageFont.truetype(FONT_REG, 21)
 
-    # 1. Top Session Pill (Below top safe zone at Y=210)
     accent = (16, 185, 129, 255) if is_recap else (245, 180, 35, 255)
     draw.rounded_rectangle([(50, 210), (1030, 275)], radius=14, fill=(18, 24, 36, 255), outline=accent, width=2)
-    draw.ellipse([(75, 233), (95, 253)], fill=(239, 68, 68, 255))  # Live dot
+    draw.ellipse([(75, 233), (95, 253)], fill=(239, 68, 68, 255))
     draw.text((110, 227), f"FR6 FX  •  {session_label}  [{tf_badge}]", font=f_brand, fill=accent)
 
-    # 2. Punchy Hook Title (Y=295)
     draw.text((55, 295), hook_title[:36], font=f_hook, fill=(255, 255, 255, 255))
 
-    # 3. Authentic TradingView Chart Window (1000x860 at Y=365..1225)
     tv_img = Image.open(tv_png_path).convert("RGBA").resize((1000, 860), Image.Resampling.LANCZOS)
     mask = Image.new("L", (1000, 860), 0)
     ImageDraw.Draw(mask).rounded_rectangle([(0, 0), (1000, 860)], radius=20, fill=255)
@@ -45,19 +41,15 @@ def build_fr6fx_frame(tv_png_path, out_png_path, session_label, tf_badge, hook_t
     draw.rounded_rectangle([(38, 363), (1042, 1227)], radius=22, outline=(45, 55, 75, 255), width=3)
     canvas.paste(tv_img, (40, 365), mask)
 
-    # 4. Color-Coded SMC Levels Bar (Y=1245..1345)
     if not is_recap:
-        # Red Premium (Strong High)
         draw.rounded_rectangle([(40, 1245), (355, 1345)], radius=14, fill=(52, 18, 26, 255), outline=(239, 68, 68, 255), width=2)
         draw.text((60, 1258), "PREMIUM HIGH", font=f_pill_lbl, fill=(248, 113, 113, 255))
         draw.text((60, 1290), f"${smc['strong_high']}", font=f_pill_val, fill=(255, 255, 255, 255))
 
-        # Gold 50% Equilibrium
         draw.rounded_rectangle([(375, 1245), (705, 1345)], radius=14, fill=(48, 38, 16, 255), outline=(245, 180, 35, 255), width=2)
         draw.text((395, 1258), "50% EQUILIBRIUM", font=f_pill_lbl, fill=(252, 211, 77, 255))
         draw.text((395, 1290), f"${smc['equilibrium']}", font=f_pill_val, fill=(255, 255, 255, 255))
 
-        # Blue Discount (Strong Low)
         draw.rounded_rectangle([(725, 1245), (1040, 1345)], radius=14, fill=(16, 36, 58, 255), outline=(59, 130, 246, 255), width=2)
         draw.text((745, 1258), "DISCOUNT LOW", font=f_pill_lbl, fill=(96, 165, 250, 255))
         draw.text((745, 1290), f"${smc['strong_low']}", font=f_pill_val, fill=(255, 255, 255, 255))
@@ -65,18 +57,40 @@ def build_fr6fx_frame(tv_png_path, out_png_path, session_label, tf_badge, hook_t
         draw.rounded_rectangle([(40, 1245), (1040, 1345)], radius=14, fill=(14, 48, 38, 255), outline=(16, 185, 129, 255), width=3)
         draw.text((255, 1278), "PREVIOUS SMC LEVEL PLAYED OUT ✅", font=f_brand, fill=(52, 211, 153, 255))
 
-    # 5. Bottom Watermark & Disclaimer (Above bottom UI safe zone)
     draw.text((195, 1600), "@FR6FX  •  Educational purposes only. Not financial advice.", font=f_disc, fill=(135, 145, 165, 255))
-
     canvas.convert("RGB").save(out_png_path, quality=95)
-
 async def synthesize_human_voice(spoken_text, raw_mp3, clean_mp3):
-    """Generates natural trader TTS and trims dead air for crisp pacing."""
-    tts = edge_tts.Communicate(spoken_text, voice="en-US-AndrewNeural", rate="+11%", pitch="+1Hz")
-    await tts.save(raw_mp3)
+    clean_text = re.sub(r"[^\w\s.,!?'-]", " ", str(spoken_text)).strip()
+    if not clean_text:
+        clean_text = "Gold live session analysis is now ready. Check the key levels on screen."
+
+    voices = ["en-US-GuyNeural", "en-US-ChristopherNeural", "en-GB-RyanNeural"]
+    edge_success = False
+
+    for v in voices:
+        try:
+            tts = edge_tts.Communicate(clean_text, voice=v, rate="+10%")
+            await tts.save(raw_mp3)
+            if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 1000:
+                edge_success = True
+                break
+        except Exception as e:
+            print(f"⚠️ Edge-TTS {v} skipped: {e}")
+
+    if not edge_success:
+        print("🔄 Switching to reliable gTTS fallback...")
+        gtts_obj = gTTS(text=clean_text, lang="en", tld="com", slow=False)
+        gtts_obj.save(raw_mp3)
+
+    tempo_filter = (
+        "silenceremove=stop_periods=-1:stop_duration=0.16:stop_threshold=-40dB"
+        if edge_success
+        else "atempo=1.12,silenceremove=stop_periods=-1:stop_duration=0.16:stop_threshold=-40dB"
+    )
+
     subprocess.run([
         "ffmpeg", "-y", "-i", raw_mp3,
-        "-af", "silenceremove=stop_periods=-1:stop_duration=0.16:stop_threshold=-40dB",
+        "-af", tempo_filter,
         clean_mp3
     ], check=True)
 
@@ -88,7 +102,6 @@ def sec_to_ass(sec):
     return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
 def build_pop_captions(audio_mp3, out_ass):
-    """Creates bold 2-word animated captions with gold highlights on numbers."""
     model = WhisperModel("tiny", device="cpu", compute_type="int8")
     segments, _ = model.transcribe(audio_mp3, word_timestamps=True)
 
@@ -127,7 +140,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         f.writelines(events)
 
 def compile_video(frame_1, frame_2, audio_mp3, ass_file, output_mp4):
-    """Stitches 15m -> 5m zoom cut, progress bar, and burned-in captions."""
     dur_str = subprocess.check_output([
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", audio_mp3
@@ -161,7 +173,6 @@ async def main():
 
     smc = data["smc"]
 
-    # 1. Main Setup Reel (15m Macro -> 5m Execution Chart)
     build_fr6fx_frame("assets/tv_15m.png", "assets/card_15m.png", data["session"], "15M CHART", data["hook_banner"], smc)
     build_fr6fx_frame("assets/tv_5m.png", "assets/card_5m.png", data["session"], "5M CHART", data["hook_banner"], smc)
 
@@ -170,7 +181,6 @@ async def main():
     compile_video("assets/card_15m.png", "assets/card_5m.png", "assets/v_clean.mp3", "assets/subs.ass", "assets/final_reel.mp4")
     print("✅ Main Reel compiled: assets/final_reel.mp4")
 
-    # 2. Bonus "TARGET PLAYED OUT" Proof Reel (when triggered)
     if data.get("recap_enabled") and data.get("recap_spoken_script"):
         with open("predictions.json") as f:
             hist = json.load(f)
