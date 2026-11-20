@@ -139,7 +139,11 @@ def upload_facebook_reel(video_url, caption):
     print("✅ Facebook Reel Live:", fin_res)
 
 def broadcast_reel(video_path, yt_title, social_caption, tag_name):
-    upload_youtube_short(video_path, yt_title, social_caption)
+    try:
+        upload_youtube_short(video_path, yt_title, social_caption)
+    except Exception as e:
+        print("❌ YouTube Upload Error (check YT secrets):", e)
+
     public_mp4_url = create_temp_public_url(video_path, tag_name)
     try:
         upload_instagram_reel(public_mp4_url, social_caption)
