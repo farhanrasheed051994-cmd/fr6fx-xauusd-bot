@@ -85,15 +85,14 @@ async def capture_tradingview_charts():
             )
             page = await context.new_page()
 
-            await page.goto(f"{base_url}?interval=15", wait_until="domcontentloaded")
-            await page.wait_for_selector("iframe", timeout=15000)
+            await page.goto(f"{base_url}?interval=15", wait_until="networkidle", timeout=30000)
             await page.wait_for_timeout(8000)
             await page.screenshot(path="assets/tv_15m.png")
 
-            await page.goto(f"{base_url}?interval=5", wait_until="domcontentloaded")
-            await page.wait_for_selector("iframe", timeout=15000)
+            await page.goto(f"{base_url}?interval=5", wait_until="networkidle", timeout=30000)
             await page.wait_for_timeout(8000)
             await page.screenshot(path="assets/tv_5m.png")
+
 
             await browser.close()
     finally:
