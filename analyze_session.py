@@ -131,7 +131,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     }}
     """
 
-    models_to_try = ["gemini-3.8-flash", "gemini-2.5-flash-lite", "gemini-3.8-pro"]
+    models_to_try = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
     response = None
 
     for model_name in models_to_try:
@@ -149,15 +149,42 @@ def generate_ai_analysis(smc, news, session_name, played_out):
                     break
             except Exception as e:
                 print(f"⚠️ {model_name} attempt {attempt+1} busy: {e}")
-                time.sleep(8)
+                time.sleep(6)
         if response and response.text:
             print(f"✅ AI analysis generated using {model_name}")
             break
 
-    if not response or not response.text:
-        raise RuntimeError("All Gemini models temporarily unavailable—will retry on next run.")
+    if response and response.text:
+        result = json.loads(response.text)
+    else:
+        print("🔄 Gemini busy—using built-in Smart Money fallback script...")
+        result = {
+            "date_label": today_label,
+            "session": session_name,
+            "hook_banner": f"GOLD AT ${smc['live_price']} WATCH THIS",
+            "spoken_script": (
+                f"Gold is trading right around {smc['live_price']} heading into the {session_name}. "
+                f"Right now price is {smc['zone_status']}. "
+                f"Our red premium strong high sits at {smc['strong_high']}, while fifty percent equilibrium is at {smc['equilibrium']}. "
+                f"On the downside, institutional discount support rests at {smc['strong_low']}. "
+                f"With the five minute twenty and fifty EMAs guiding intraday momentum and DXY {smc['dxy_bias']}, "
+                f"wait for a clean liquidity sweep before entering. Are you buying the discount floor or selling the premium cap? Comment below."
+            ),
+            "youtube_title": f"{session_name.title()} Gold Live TradingView Analysis ({today_label}) | XAUUSD #Shorts",
+            "social_caption": (
+                f"🟡 XAUUSD {session_name} GAMEPLAN ({today_label})\n\n"
+                f"🔴 Premium Strong High: ${smc['strong_high']}\n"
+                f"🟡 50% Equilibrium: ${smc['equilibrium']}\n"
+                f"🔵 Discount Strong Low: ${smc['strong_low']}\n"
+                f"📊 5m EMA 20 / 50: ${smc['ema20']} / ${smc['ema50']}\n\n"
+                f"💾 Save this post & follow @FR6FX for daily live Gold levels!\n"
+                f"⚠️ Educational purposes only. Not financial advice.\n"
+                f"#XAUUSD #GoldTrading #SmartMoneyConcepts #TradingView #FR6FX"
+            ),
+            "recap_enabled": False,
+            "recap_spoken_script": ""
+        }
 
-    result = json.loads(response.text)
     result["smc"] = smc
 
     history = []
