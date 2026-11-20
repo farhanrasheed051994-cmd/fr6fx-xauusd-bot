@@ -1,0 +1,57 @@
+name: FR6FX Daily XAUUSD Reels Automation
+
+on:
+  schedule:
+    - cron: '30 6 * * 1-5'   # 11:30 AM PKT (Pre-London Open, Mon-Fri)
+    - cron: '30 12 * * 1-5'  # 5:30 PM PKT (Pre-New York Open, Mon-Fri)
+  workflow_dispatch:         # Manual Run button for testing anytime
+
+jobs:
+  run-fr6fx-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout FR6FX Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install FFmpeg & System Fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+
+      - name: Install Python Packages & Playwright Chromium
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: Phase 2 & 3 - Capture Live TradingView & Run Gemini SMC Analysis
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python analyze_session.py
+
+      - name: Phase 4 - Edit Human-Style FR6FX Reels
+        run: python video_editor.py
+
+      - name: Phase 5 - Publish to YouTube Shorts, Instagram & Facebook Reels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+        run: python publish_all.py
+
+      - name: Save Trade Memory for "Called It" Bonus Reels
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@://github.com"
+          git add predictions.json assets/history_*.png
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Log FR6FX XAUUSD session levels" && git push)
