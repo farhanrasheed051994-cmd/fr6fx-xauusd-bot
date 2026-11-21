@@ -194,10 +194,10 @@ def build_pop_captions(audio_mp3, out_ass):
             if not txt:
                 continue
             if raw_words and (txt.startswith(".") or txt.startswith(",")):
-                prev_s, _, prev_t = raw_words[-1]
-                raw_words[-1] = (prev_s, w.end, prev_t + txt)
+                raw_words[-1]["end"] = w.end
+                raw_words[-1]["text"] += txt
             else:
-                raw_words.append((w.start, w.end, txt))
+                raw_words.append({"start": w.start, "end": w.end, "text": txt})
 
     ass_header = """[Script Info]
 ScriptType: v4.00+
@@ -214,11 +214,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     events = [ass_header]
     for i in range(0, len(raw_words), 3):
         chunk = raw_words[i:i+3]
-        t0 = sec_to_ass(chunk)
-        t1 = sec_to_ass(chunk[-1] + 0.08)
+        first_word = next(iter(chunk))
+        last_word = chunk[-1]
+        t0 = sec_to_ass(first_word.get("start", 0.0))
+        t1 = sec_to_ass(last_word.get("end", 0.0) + 0.08)
         formatted = []
-        for _, _, txt in chunk:
-            clean = re.sub(r"[,;!?]+$", "", txt).upper()
+        for item in chunk:
+            clean = re.sub(r"[,;!?]+$", "", item.get("text", "")).upper()
             if re.search(r"\d", clean):
                 formatted.append(f"{{\\c&H00D7FF&}}{clean}{{\\c&HFFFFFF&}}")
             else:
@@ -227,6 +229,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     with open(out_ass, "w") as f:
         f.writelines(events)
+
 
 def compile_video(frame_1, frame_2, audio_mp3, ass_file, output_mp4):
     """Locked 1080x1920 scale with smooth 0.4s crossfade (zero initial chart shrinking)."""
