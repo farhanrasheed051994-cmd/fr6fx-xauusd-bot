@@ -11,7 +11,39 @@ from faster_whisper import WhisperModel
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
-def build_fr6fx_frame(tv_png_path, out_png_path, session_label, tf_badge, hook_title, smc, is_recap=False):
+def draw_live_chart_zones(tv_img, smc):
+    """Overlays translucent Red Resistance, Gold 50% Equilibrium & Blue Support bands onto the chart."""
+    overlay = Image.new("RGBA", tv_img.size, (0, 0, 0, 0))
+    odraw = ImageDraw.Draw(overlay)
+    cw, ch = tv_img.size  # 940 x 760
+
+    # Keep right 110px clear so TradingView's real price scale axis remains 100% readable
+    plot_right = cw - 115
+    f_zone = ImageFont.truetype(FONT_BOLD, 18)
+
+    # 1. Top Red Resistance / Supply Zone (Y: 55..125)
+    odraw.rectangle([(10, 55), (plot_right, 125)], fill=(239, 68, 68, 48))
+    odraw.line([(10, 55), (plot_right, 55)], fill=(239, 68, 68, 220), width=2)
+    odraw.rounded_rectangle([(18, 64), (310, 96)], radius=6, fill=(185, 28, 28, 220))
+    odraw.text((28, 70), f"RESISTANCE  ${smc['strong_high']}", font=f_zone, fill=(255, 255, 255, 255))
+
+    # 2. Middle Gold 50% Equilibrium Dashed Line (Y: 365)
+    eq_y = 365
+    for x in range(10, plot_right, 22):
+        odraw.line([(x, eq_y), (min(x + 12, plot_right), eq_y)], fill=(245, 180, 35, 230), width=3)
+    odraw.rounded_rectangle([(18, eq_y - 38), (320, eq_y - 6)], radius=6, fill=(161, 98, 7, 225))
+    odraw.text((28, eq_y - 32), f"50% EQ  ${smc['equilibrium']}", font=f_zone, fill=(255, 255, 255, 255))
+
+    # 3. Bottom Blue Support / Demand Zone (Y: 560..630)
+    odraw.rectangle([(10, 560), (plot_right, 630)], fill=(59, 130, 246, 52))
+    odraw.line([(10, 630), (plot_right, 630)], fill=(59, 130, 246, 220), width=2)
+    odraw.rounded_rectangle([(18, 592), (295, 624)], radius=6, fill=(29, 78, 216, 220))
+    odraw.text((28, 598), f"SUPPORT  ${smc['strong_low']}", font=f_zone, fill=(255, 255, 255, 255))
+
+    return Image.alpha_composite(tv_img, overlay)
+
+def build_fr6fx_frame(tv_png_path, out_png_path, session_label, tf_badge, headline_text, smc, is_recap=False):
+    """Builds a safe-margined 1080x1920 FR6 FX mobile frame with live chart zones & bias meter."""
     W, H = 1080, 1920
     canvas = Image.new("RGBA", (W, H), (9, 12, 18, 255))
     draw = ImageDraw.Draw(canvas)
@@ -21,55 +53,70 @@ def build_fr6fx_frame(tv_png_path, out_png_path, session_label, tf_badge, hook_t
     for y in range(0, H, 90):
         draw.line([(0, y), (W, y)], fill=(18, 23, 34, 255), width=1)
 
-    f_brand = ImageFont.truetype(FONT_BOLD, 28)
-    f_hook = ImageFont.truetype(FONT_BOLD, 42)
-    f_pill_lbl = ImageFont.truetype(FONT_BOLD, 20)
-    f_pill_val = ImageFont.truetype(FONT_BOLD, 28)
-    f_disc = ImageFont.truetype(FONT_REG, 21)
+    f_brand = ImageFont.truetype(FONT_BOLD, 25)
+    f_head = ImageFont.truetype(FONT_BOLD, 36)
+    f_sub = ImageFont.truetype(FONT_BOLD, 21)
+    f_pill_lbl = ImageFont.truetype(FONT_BOLD, 18)
+    f_pill_val = ImageFont.truetype(FONT_BOLD, 25)
+    f_disc = ImageFont.truetype(FONT_REG, 20)
 
+    # Safe horizontal margins: X = 70 to 1010 (940px wide) so mobile UI never clips text
     accent = (16, 185, 129, 255) if is_recap else (245, 180, 35, 255)
-    draw.rounded_rectangle([(50, 210), (1030, 275)], radius=14, fill=(18, 24, 36, 255), outline=accent, width=2)
-    draw.ellipse([(75, 233), (95, 253)], fill=(239, 68, 68, 255))
-    draw.text((110, 227), f"FR6 FX  •  {session_label}  [{tf_badge}]", font=f_brand, fill=accent)
+    draw.rounded_rectangle([(70, 205), (1010, 265)], radius=12, fill=(18, 24, 36, 255), outline=accent, width=2)
+    draw.ellipse([(92, 226), (110, 244)], fill=(239, 68, 68, 255))
+    draw.text((124, 221), f"FR6 FX  •  {session_label}  [{tf_badge}]", font=f_brand, fill=accent)
 
-    draw.text((55, 295), hook_title[:36], font=f_hook, fill=(255, 255, 255, 255))
+    # Clean Institutional Headline (No cheesy questions)
+    clean_head = headline_text.replace("?", "").strip()[:34]
+    draw.text((70, 282), clean_head, font=f_head, fill=(255, 255, 255, 255))
 
-    tv_img = Image.open(tv_png_path).convert("RGBA").resize((1000, 860), Image.Resampling.LANCZOS)
-    mask = Image.new("L", (1000, 860), 0)
-    ImageDraw.Draw(mask).rounded_rectangle([(0, 0), (1000, 860)], radius=20, fill=255)
+    # Sentiment Bias & DXY Macro Bar (Y: 334..376)
+    bias_lbl = smc.get("bias_label", "MARKET OUTLOOK")
+    bias_col = (52, 211, 153, 255) if "BULLISH" in bias_lbl else ((248, 113, 113, 255) if "BEARISH" in bias_lbl else (252, 211, 77, 255))
+    draw.rounded_rectangle([(70, 334), (1010, 376)], radius=8, fill=(20, 27, 40, 255))
+    draw.text((86, 343), f"{bias_lbl}  |  DXY: {smc.get('dxy_now', '')}  |  GOLD: ${smc['live_price']}", font=f_sub, fill=bias_col)
 
-    draw.rounded_rectangle([(38, 363), (1042, 1227)], radius=22, outline=(45, 55, 75, 255), width=3)
-    canvas.paste(tv_img, (40, 365), mask)
-
+    # Authentic TradingView Chart Window with Live Zones Drawn On Top (940x760 at Y=392..1152)
+    tv_img = Image.open(tv_png_path).convert("RGBA").resize((940, 760), Image.Resampling.LANCZOS)
     if not is_recap:
-        draw.rounded_rectangle([(40, 1245), (355, 1345)], radius=14, fill=(52, 18, 26, 255), outline=(239, 68, 68, 255), width=2)
-        draw.text((60, 1258), "PREMIUM HIGH", font=f_pill_lbl, fill=(248, 113, 113, 255))
-        draw.text((60, 1290), f"${smc['strong_high']}", font=f_pill_val, fill=(255, 255, 255, 255))
+        tv_img = draw_live_chart_zones(tv_img, smc)
 
-        draw.rounded_rectangle([(375, 1245), (705, 1345)], radius=14, fill=(48, 38, 16, 255), outline=(245, 180, 35, 255), width=2)
-        draw.text((395, 1258), "50% EQUILIBRIUM", font=f_pill_lbl, fill=(252, 211, 77, 255))
-        draw.text((395, 1290), f"${smc['equilibrium']}", font=f_pill_val, fill=(255, 255, 255, 255))
+    mask = Image.new("L", (940, 760), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([(0, 0), (940, 760)], radius=18, fill=255)
+    draw.rounded_rectangle([(68, 390), (1012, 1154)], radius=20, outline=(45, 55, 75, 255), width=3)
+    canvas.paste(tv_img, (70, 392), mask)
 
-        draw.rounded_rectangle([(725, 1245), (1040, 1345)], radius=14, fill=(16, 36, 58, 255), outline=(59, 130, 246, 255), width=2)
-        draw.text((745, 1258), "DISCOUNT LOW", font=f_pill_lbl, fill=(96, 165, 250, 255))
-        draw.text((745, 1290), f"${smc['strong_low']}", font=f_pill_val, fill=(255, 255, 255, 255))
+    # 3 Equal-Width Level Cards Inside Safe Margins (X: 70..1010, Y: 1172..1262)
+    if not is_recap:
+        draw.rounded_rectangle([(70, 1172), (370, 1262)], radius=12, fill=(52, 18, 26, 255), outline=(239, 68, 68, 255), width=2)
+        draw.text((88, 1184), "RESISTANCE CAP", font=f_pill_lbl, fill=(248, 113, 113, 255))
+        draw.text((88, 1214), f"${smc['strong_high']}", font=f_pill_val, fill=(255, 255, 255, 255))
+
+        draw.rounded_rectangle([(390, 1172), (690, 1262)], radius=12, fill=(48, 38, 16, 255), outline=(245, 180, 35, 255), width=2)
+        draw.text((408, 1184), "50% EQUILIBRIUM", font=f_pill_lbl, fill=(252, 211, 77, 255))
+        draw.text((408, 1214), f"${smc['equilibrium']}", font=f_pill_val, fill=(255, 255, 255, 255))
+
+        draw.rounded_rectangle([(710, 1172), (1010, 1262)], radius=12, fill=(16, 36, 58, 255), outline=(59, 130, 246, 255), width=2)
+        draw.text((728, 1184), "SUPPORT FLOOR", font=f_pill_lbl, fill=(96, 165, 250, 255))
+        draw.text((728, 1214), f"${smc['strong_low']}", font=f_pill_val, fill=(255, 255, 255, 255))
     else:
-        draw.rounded_rectangle([(40, 1245), (1040, 1345)], radius=14, fill=(14, 48, 38, 255), outline=(16, 185, 129, 255), width=3)
-        draw.text((255, 1278), "PREVIOUS SMC LEVEL PLAYED OUT ✅", font=f_brand, fill=(52, 211, 153, 255))
+        draw.rounded_rectangle([(70, 1172), (1010, 1262)], radius=12, fill=(14, 48, 38, 255), outline=(16, 185, 129, 255), width=3)
+        draw.text((260, 1202), "PREVIOUS LEVEL PLAYED OUT ✅", font=f_brand, fill=(52, 211, 153, 255))
 
-    draw.text((195, 1600), "@FR6FX  •  Educational purposes only. Not financial advice.", font=f_disc, fill=(135, 145, 165, 255))
+    draw.text((210, 1620), "@FR6FX  •  Educational purposes only. Not financial advice.", font=f_disc, fill=(135, 145, 165, 255))
     canvas.convert("RGB").save(out_png_path, quality=95)
 async def synthesize_human_voice(spoken_text, raw_mp3, clean_mp3):
     clean_text = re.sub(r"[^\w\s.,!?'-]", " ", str(spoken_text)).strip()
     if not clean_text:
         clean_text = "Gold live session analysis is now ready. Check the key levels on screen."
 
-    voices = ["en-US-GuyNeural", "en-US-ChristopherNeural", "en-GB-RyanNeural"]
+    voices = ["en-US-AndrewNeural", "en-US-GuyNeural", "en-GB-RyanNeural"]
     edge_success = False
 
     for v in voices:
         try:
-            tts = edge_tts.Communicate(clean_text, voice=v, rate="+10%")
+            # Calm, natural human speed (+2% instead of rushed +11%)
+            tts = edge_tts.Communicate(clean_text, voice=v, rate="+2%")
             await tts.save(raw_mp3)
             if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 1000:
                 edge_success = True
@@ -82,10 +129,11 @@ async def synthesize_human_voice(spoken_text, raw_mp3, clean_mp3):
         gtts_obj = gTTS(text=clean_text, lang="en", tld="com", slow=False)
         gtts_obj.save(raw_mp3)
 
+    # Keep natural pacing (1.03x for gTTS) and trim only long pauses > 0.25s
     tempo_filter = (
-        "silenceremove=stop_periods=-1:stop_duration=0.16:stop_threshold=-40dB"
+        "silenceremove=stop_periods=-1:stop_duration=0.25:stop_threshold=-40dB"
         if edge_success
-        else "atempo=1.12,silenceremove=stop_periods=-1:stop_duration=0.16:stop_threshold=-40dB"
+        else "atempo=1.03,silenceremove=stop_periods=-1:stop_duration=0.25:stop_threshold=-40dB"
     )
 
     subprocess.run([
@@ -105,10 +153,18 @@ def build_pop_captions(audio_mp3, out_ass):
     model = WhisperModel("tiny", device="cpu", compute_type="int8")
     segments, _ = model.transcribe(audio_mp3, word_timestamps=True)
 
-    words = []
+    # Merge split decimal tokens (e.g., "3621" + ".9") into clean single words
+    raw_words = []
     for seg in segments:
         for w in seg.words:
-            words.append((w.start, w.end, w.word.strip()))
+            txt = w.word.strip()
+            if not txt:
+                continue
+            if raw_words and (txt.startswith(".") or txt.startswith(",")):
+                prev_s, _, prev_t = raw_words[-1]
+                raw_words[-1] = (prev_s, w.end, prev_t + txt)
+            else:
+                raw_words.append((w.start, w.end, txt))
 
     ass_header = """[Script Info]
 ScriptType: v4.00+
@@ -117,23 +173,23 @@ PlayResY: 1920
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,DejaVu Sans,64,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,5,2,2,60,60,410,1
+Style: Default,DejaVu Sans,54,&H00FFFFFF,&H00000000,&H99090C12,-1,0,0,0,100,100,0,0,3,14,0,2,80,80,450,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     events = [ass_header]
-    for i in range(0, len(words), 2):
-        pair = words[i:i+2]
-        t0 = sec_to_ass(pair[0][0])
-        t1 = sec_to_ass(pair[-1][1] + 0.06)
+    for i in range(0, len(raw_words), 3):
+        chunk = raw_words[i:i+3]
+        t0 = sec_to_ass(chunk[0][0])
+        t1 = sec_to_ass(chunk[-1][1] + 0.08)
         formatted = []
-        for _, _, txt in pair:
-            up = txt.upper()
-            if re.search(r"\d", up):
-                formatted.append(f"{{\\c&H00D7FF&}}{up}{{\\c&HFFFFFF&}}")
+        for _, _, txt in chunk:
+            clean = re.sub(r"[,;!?]+$", "", txt).upper()
+            if re.search(r"\d", clean):
+                formatted.append(f"{{\\c&H00D7FF&}}{clean}{{\\c&HFFFFFF&}}")
             else:
-                formatted.append(up)
+                formatted.append(clean)
         events.append(f"Dialogue: 0,{t0},{t1},Default,,0,0,0,,{' '.join(formatted)}\n")
 
     with open(out_ass, "w") as f:
@@ -147,9 +203,10 @@ def compile_video(frame_1, frame_2, audio_mp3, ass_file, output_mp4):
     dur = float(dur_str)
     half = dur / 2.0
 
+    # Gentle 1.02x zoom keeps all 70px left/right margins 100% visible inside Reels/Shorts UI
     filter_graph = (
-        f"[0:v]scale=1166:2074,zoompan=z='min(zoom+0.0007,1.06)':d={int(half*30)}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30[v0];"
-        f"[1:v]scale=1166:2074,zoompan=z='min(zoom+0.0007,1.06)':d={int((dur-half)*30)+15}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30[v1];"
+        f"[0:v]scale=1102:1958,zoompan=z='min(zoom+0.0003,1.02)':d={int(half*30)}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30[v0];"
+        f"[1:v]scale=1102:1958,zoompan=z='min(zoom+0.0003,1.02)':d={int((dur-half)*30)+15}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30[v1];"
         f"[v0][v1]concat=n=2:v=1:a=0[vcat];"
         f"[vcat]drawbox=x=0:y=1908:w='iw*(t/{dur})':h=12:color=0xF5B423:t=fill[vbar];"
         f"[vbar]ass={ass_file}[vout]"
@@ -173,14 +230,15 @@ async def main():
         data = json.load(f)
 
     smc = data["smc"]
+    headline = data.get("headline", f"XAUUSD {data['session']} OUTLOOK")
 
-    build_fr6fx_frame("assets/tv_15m.png", "assets/card_15m.png", data["session"], "15M CHART", data["hook_banner"], smc)
-    build_fr6fx_frame("assets/tv_5m.png", "assets/card_5m.png", data["session"], "5M CHART", data["hook_banner"], smc)
+    build_fr6fx_frame("assets/tv_15m.png", "assets/card_15m.png", data["session"], "15M CHART", headline, smc)
+    build_fr6fx_frame("assets/tv_5m.png", "assets/card_5m.png", data["session"], "5M CHART", headline, smc)
 
     await synthesize_human_voice(data["spoken_script"], "assets/v_raw.mp3", "assets/v_clean.mp3")
     build_pop_captions("assets/v_clean.mp3", "assets/subs.ass")
     compile_video("assets/card_15m.png", "assets/card_5m.png", "assets/v_clean.mp3", "assets/subs.ass", "assets/final_reel.mp4")
-    print("✅ Main Reel compiled: assets/final_reel.mp4")
+    print("✅ Upgraded Main Reel compiled: assets/final_reel.mp4")
 
     if data.get("recap_enabled") and data.get("recap_spoken_script"):
         with open("predictions.json") as f:
@@ -188,7 +246,7 @@ async def main():
         prev = hist[-2] if len(hist) >= 2 else None
         if prev and os.path.exists(prev.get("saved_5m_chart", "")):
             build_fr6fx_frame(prev["saved_5m_chart"], "assets/recap_1.png", "PREVIOUS SETUP", "BEFORE", "CALLED BEFORE THE MOVE ✅", smc, is_recap=True)
-            build_fr6fx_frame("assets/tv_5m.png", "assets/recap_2.png", "LIVE RESULT", "AFTER", "LEVEL SMASHED TO THE DOLLAR ✅", smc, is_recap=True)
+            build_fr6fx_frame("assets/tv_5m.png", "assets/recap_2.png", "LIVE RESULT", "AFTER", "LEVEL PLAYED OUT ✅", smc, is_recap=True)
 
             await synthesize_human_voice(data["recap_spoken_script"], "assets/rv_raw.mp3", "assets/rv_clean.mp3")
             build_pop_captions("assets/rv_clean.mp3", "assets/rsubs.ass")
