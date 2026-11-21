@@ -1,4 +1,4 @@
-name: FR6FX Daily XAUUSD Reels Automation
+name: FR6FX Daily XAUUSD Reels & Telegram Automation
 
 on:
   schedule:
@@ -9,6 +9,7 @@ on:
 jobs:
   run-fr6fx-pipeline:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout FR6FX Repository
         uses: actions/checkout@v4
@@ -32,14 +33,19 @@ jobs:
       - name: Phase 2 & 3 - Capture Live TradingView & Run Gemini SMC Analysis
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_LINK: ${{ secrets.TELEGRAM_LINK }}
         run: python analyze_session.py
 
-      - name: Phase 4 - Edit Human-Style FR6FX Reels
+      - name: Phase 4 - Edit Locked-Scale FR6FX Reels & Telegram Chart
+        env:
+          TELEGRAM_LINK: ${{ secrets.TELEGRAM_LINK }}
         run: python video_editor.py
 
-      - name: Phase 5 - Publish to YouTube Shorts, Instagram & Facebook Reels
+      - name: Phase 5 - Publish to Telegram, YouTube Shorts, Instagram & Facebook
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
