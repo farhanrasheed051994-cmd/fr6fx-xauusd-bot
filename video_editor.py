@@ -12,35 +12,48 @@ FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
 def draw_live_chart_zones(tv_img, smc):
-    """Overlays translucent Red Resistance, Gold 50% Equilibrium & Blue Support bands onto the chart."""
+    """Aligns Red Resistance, Gold 50% Equilibrium & Blue Support bands proportionally to live price."""
     overlay = Image.new("RGBA", tv_img.size, (0, 0, 0, 0))
     odraw = ImageDraw.Draw(overlay)
     cw, ch = tv_img.size  # 940 x 760
-
-    # Keep right 110px clear so TradingView's real price scale axis remains 100% readable
     plot_right = cw - 115
     f_zone = ImageFont.truetype(FONT_BOLD, 18)
 
-    # 1. Top Red Resistance / Supply Zone (Y: 55..125)
-    odraw.rectangle([(10, 55), (plot_right, 125)], fill=(239, 68, 68, 48))
-    odraw.line([(10, 55), (plot_right, 55)], fill=(239, 68, 68, 220), width=2)
-    odraw.rounded_rectangle([(18, 64), (310, 96)], radius=6, fill=(185, 28, 28, 220))
-    odraw.text((28, 70), f"RESISTANCE  ${smc['strong_high']}", font=f_zone, fill=(255, 255, 255, 255))
+    sh = float(smc["strong_high"])
+    sl = float(smc["strong_low"])
+    eq = float(smc["equilibrium"])
+    lp = float(smc["live_price"])
 
-    # 2. Middle Gold 50% Equilibrium Dashed Line (Y: 365)
-    eq_y = 365
+    # Map price range into chart plot area (Y: 60 to 635)
+    span = max(sh - sl, 1.0)
+    def price_to_y(p):
+        ratio = (sh - p) / span
+        return int(max(55, min(635, 65 + ratio * 560)))
+
+    y_res = price_to_y(sh)
+    y_eq = price_to_y(eq)
+    y_sup = price_to_y(sl)
+
+    # 1. Red Resistance Zone
+    odraw.rectangle([(10, y_res), (plot_right, y_res + 58)], fill=(239, 68, 68, 52))
+    odraw.line([(10, y_res), (plot_right, y_res)], fill=(239, 68, 68, 230), width=2)
+    odraw.rounded_rectangle([(18, y_res + 8), (305, y_res + 38)], radius=6, fill=(185, 28, 28, 230))
+    odraw.text((28, y_res + 13), f"RESISTANCE  ${sh}", font=f_zone, fill=(255, 255, 255, 255))
+
+    # 2. Gold 50% Equilibrium Dashed Line
     for x in range(10, plot_right, 22):
-        odraw.line([(x, eq_y), (min(x + 12, plot_right), eq_y)], fill=(245, 180, 35, 230), width=3)
-    odraw.rounded_rectangle([(18, eq_y - 38), (320, eq_y - 6)], radius=6, fill=(161, 98, 7, 225))
-    odraw.text((28, eq_y - 32), f"50% EQ  ${smc['equilibrium']}", font=f_zone, fill=(255, 255, 255, 255))
+        odraw.line([(x, y_eq), (min(x + 12, plot_right), y_eq)], fill=(245, 180, 35, 235), width=3)
+    odraw.rounded_rectangle([(18, y_eq - 36), (315, y_eq - 6)], radius=6, fill=(161, 98, 7, 235))
+    odraw.text((28, y_eq - 31), f"50% EQ  ${eq}", font=f_zone, fill=(255, 255, 255, 255))
 
-    # 3. Bottom Blue Support / Demand Zone (Y: 560..630)
-    odraw.rectangle([(10, 560), (plot_right, 630)], fill=(59, 130, 246, 52))
-    odraw.line([(10, 630), (plot_right, 630)], fill=(59, 130, 246, 220), width=2)
-    odraw.rounded_rectangle([(18, 592), (295, 624)], radius=6, fill=(29, 78, 216, 220))
-    odraw.text((28, 598), f"SUPPORT  ${smc['strong_low']}", font=f_zone, fill=(255, 255, 255, 255))
+    # 3. Blue Support Zone
+    odraw.rectangle([(10, y_sup - 58), (plot_right, y_sup)], fill=(59, 130, 246, 56))
+    odraw.line([(10, y_sup), (plot_right, y_sup)], fill=(59, 130, 246, 230), width=2)
+    odraw.rounded_rectangle([(18, y_sup - 38), (290, y_sup - 8)], radius=6, fill=(29, 78, 216, 230))
+    odraw.text((28, y_sup - 33), f"SUPPORT  ${sl}", font=f_zone, fill=(255, 255, 255, 255))
 
     return Image.alpha_composite(tv_img, overlay)
+
 
 def build_fr6fx_frame(tv_png_path, out_png_path, session_label, tf_badge, headline_text, smc, is_recap=False):
     """Builds a safe-margined 1080x1920 FR6 FX mobile frame with live chart zones & bias meter."""
