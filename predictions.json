@@ -36,6 +36,16 @@
     "equilibrium": 3583.1,
     "strong_low": 3502.9,
     "saved_5m_chart": "assets/history_20261121_1309_5m.png",
+    "evaluated": true,
+    "outcome": null
+  },
+  {
+    "timestamp": "20261121_1408",
+    "session": "NEW YORK SESSION",
+    "strong_high": 3573.18,
+    "equilibrium": 3538.18,
+    "strong_low": 3503.18,
+    "saved_5m_chart": "assets/history_20261121_1408_5m.png",
     "evaluated": false
   }
 ]
