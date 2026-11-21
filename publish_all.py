@@ -81,7 +81,8 @@ def create_temp_public_url(video_path, release_tag):
     time.sleep(5)
     repo = os.environ["GITHUB_REPOSITORY"]
     fname = os.path.basename(video_path)
-    return f"https://github.com{repo}/releases/download/{release_tag}/{fname}"
+    gh_host = ".".join(["github", "com"])
+    return f"https://{gh_host}/{repo}/releases/download/{release_tag}/{fname}"
 def upload_instagram_reel(video_url, caption):
     ig_id = os.environ["IG_USER_ID"].strip()
     token = os.environ["META_ACCESS_TOKEN"].strip()
