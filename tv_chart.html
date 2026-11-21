@@ -41,14 +41,10 @@
       "save_image": false,
       "hide_volume": true,
       "studies": [
-        { "id": "MAExp@tv-basicstudies", "inputs": { "length": 20 } },
-        { "id": "MAExp@tv-basicstudies", "inputs": { "length": 50 } },
+        "STD;EMA",
+        "STD;SMA",
         "STD;RSI"
       ],
-      "studies_overrides": {
-        "moving average exponential.ma.color": "#00e5ff",
-        "moving average exponential.ma.linewidth": 2
-      },
       "support_host": "https://" + ["www", "tradingview", "com"].join(".")
     });
     document.querySelector(".tradingview-widget-container").appendChild(s);
