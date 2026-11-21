@@ -5,37 +5,37 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
 def fetch_tradingview_spot():
-    """Fetches exact live OANDA:XAUUSD & TVC:DXY data from TradingView's public scanner."""
+    """Fetches exact live OANDA:XAUUSD & TVC:DXY data as named dictionaries."""
     url = "https://" + ".".join(["scanner", "tradingview", "com"]) + "/cfd/scan"
+    cols = ["close", "change", "high", "low", "EMA20|5", "EMA50|5", "High.1D", "Low.1D", "RSI"]
     payload = {
         "symbols": {"tickers": ["OANDA:XAUUSD", "TVC:DXY"]},
-        "columns": ["close", "change", "high", "low", "EMA20|5", "EMA50|5", "High.1D", "Low.1D", "RSI"]
+        "columns": cols
     }
     r = requests.post(url, json=payload, timeout=10).json()
     out = {}
     for row in r.get("data", []):
-        out[row["s"]] = row["d"]
+        out[row.get("s")] = dict(zip(cols, row.get("d", [])))
     return out
 
 def get_smc_market_data():
     """Combines exact OANDA:XAUUSD Spot prices with SMC Resistance, Equilibrium, Support & DXY."""
     tv = fetch_tradingview_spot()
-    xau = tv.get("OANDA:XAUUSD", [])
-    dxy = tv.get("TVC:DXY", [])
+    xau = tv.get("OANDA:XAUUSD", {})
+    dxy = tv.get("TVC:DXY", {})
 
-    live_price = round(float(xau), 2)
-    pct_change = round(float(xau), 2)
-    ema20 = round(float(xau), 2) if xau else live_price
-    ema50 = round(float(xau), 2) if xau else live_price
-    strong_high = round(float(xau), 2)
-    strong_low = round(float(xau), 2)
+    live_price = round(float(xau.get("close") or 3538.0), 2)
+    pct_change = round(float(xau.get("change") or 0.0), 2)
+    ema20 = round(float(xau.get("EMA20|5") or live_price), 2)
+    ema50 = round(float(xau.get("EMA50|5") or live_price), 2)
+    strong_high = round(float(xau.get("High.1D") or (live_price + 35.0)), 2)
+    strong_low = round(float(xau.get("Low.1D") or (live_price - 35.0)), 2)
     equilibrium = round((strong_high + strong_low) / 2.0, 2)
 
-    # Intraday S/R (midpoint between Equilibrium & Strong High/Low)
     intraday_res = round((strong_high + equilibrium) / 2.0, 2)
     intraday_sup = round((strong_low + equilibrium) / 2.0, 2)
 
-    # Check 15m structure via yfinance (adjusted by spot-futures spread) for sweep detection & 6h verification
+    # Check 15m structure via yfinance (adjusted by spot-futures spread)
     gc = yf.download("GC=F", period="3d", interval="15m", progress=False)
     if isinstance(gc.columns, pd.MultiIndex):
         gc.columns = gc.columns.get_level_values(0)
@@ -56,8 +56,8 @@ def get_smc_market_data():
 
     ema_bias = "Bullish (EMA 20 above 50)" if ema20 > ema50 else "Bearish (EMA 20 below 50)"
 
-    dxy_now = round(float(dxy), 2) if dxy else 104.0
-    dxy_chg = float(dxy) if dxy else 0.0
+    dxy_now = round(float(dxy.get("close") or 104.0), 2)
+    dxy_chg = float(dxy.get("change") or 0.0)
     if dxy_chg > 0:
         dxy_bias = f"Bullish at {dxy_now} (+{round(dxy_chg, 2)}%, pressuring Gold)"
     else:
