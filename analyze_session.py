@@ -43,14 +43,14 @@ def check_previous_call_played_out(smc):
     if l6 <= (strong_low + 2.5) and h6 >= eq:
         outcome = {
             "won": True,
-            "setup": f"Discount Support bounce at ${strong_low} -> Equilibrium ${eq}",
+            "setup": f"Demand Zone bounce at ${strong_low} -> Equilibrium ${eq}",
             "old_session": prev["session"],
             "old_chart": prev["saved_5m_chart"]
         }
     elif h6 >= (strong_high - 2.5) and l6 <= eq:
         outcome = {
             "won": True,
-            "setup": f"Premium Resistance rejection at ${strong_high} -> Equilibrium ${eq}",
+            "setup": f"Supply Zone rejection at ${strong_high} -> Equilibrium ${eq}",
             "old_session": prev["session"],
             "old_chart": prev["saved_5m_chart"]
         }
@@ -66,7 +66,7 @@ async def capture_tradingview_charts():
     os.makedirs("assets", exist_ok=True)
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), SimpleHTTPRequestHandler)
-    port = server.server_address[1]
+    port = server.server_address
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
@@ -97,50 +97,72 @@ async def capture_tradingview_charts():
     finally:
         server.shutdown()
 def generate_ai_analysis(smc, news, session_name, played_out):
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    client = genai.Client(
+        api_key=os.environ["GEMINI_API_KEY"],
+        http_options={"timeout": 25000}
+    )
     img_15m = Image.open("assets/tv_15m.png")
     img_5m = Image.open("assets/tv_5m.png")
 
     today_label = datetime.now(timezone.utc).strftime("%d %b %Y")
+    tg_link = os.environ.get("TELEGRAM_LINK", "t.me/fr6fx_official").strip()
+    news_block = "\n".join(news)
 
     recap_prompt = ""
     if played_out and played_out.get("won"):
         recap_prompt = f"""
         BONUS RECAP TRIGGERED: Our previous {played_out['old_session']} call ({played_out['setup']}) JUST PLAYED OUT!
-        Set "recap_enabled": true and write a punchy 15-second phonetic 'recap_spoken_script' showing viewers how our FR6 FX level hit target to the dollar.
+        Set "recap_enabled": true and write a punchy 15-second phonetic 'recap_spoken_script' showing viewers how our FR6 FX level hit target.
         """
 
     prompt = f"""
-    You are the lead XAUUSD Technical & Fundamental analyst for @FR6FX.
-    Create a calm, authoritative, human-sounding 40-to-45 second vertical video script for the {session_name} on {today_label}.
+    You are the head Smart Money Concepts (SMC) mentor for @FR6FX.
+    Generate BOTH:
+    1. A calm, authoritative 42-second vertical video script ('spoken_script') for YouTube/Instagram/Facebook Reels.
+    2. A deep, mentor-style written analysis ('telegram_report') to post alongside our annotated TradingView chart image in our Telegram channel ({tg_link}).
 
-    EXACT LIVE TECHNICAL & FUNDAMENTAL DATA (Use these exact numbers):
+    EXACT LIVE TECHNICAL & SESSION DATA:
+    - Session: {session_name} ({today_label})
     - Live Gold Price: ${smc['live_price']} ({smc['pct_change']}%)
-    - Major Resistance / Red Premium Cap: ${smc['strong_high']} (Intraday Resistance: ${smc['intraday_res']})
+    - Previous Day High (PDH): ${smc['pdh']} | Previous Day Low (PDL): ${smc['pdl']}
+    - Asian Session Range: ${smc['asia_low']} – ${smc['asia_high']}
+    - London Session Range: ${smc['london_low']} – ${smc['london_high']}
+    - New York Session Range: ${smc['ny_low']} – ${smc['ny_high']}
+    - Institutional Supply Zone (Resistance): {smc['supply_zone']} (Strong High: ${smc['strong_high']})
     - 50% Equilibrium Pivot: ${smc['equilibrium']}
-    - Major Support / Blue Discount Floor: ${smc['strong_low']} (Intraday Support: ${smc['intraday_sup']})
-    - Recent Price Action / Sweep: {smc['sweep_event']}
-    - 5m EMA 20: ${smc['ema20']} | 5m EMA 50: ${smc['ema50']} ({smc['ema_bias']})
-    - DXY Macro Impact: {smc['dxy_bias']}
+    - Institutional Demand Zone (Support): {smc['demand_zone']} (Strong Low: ${smc['strong_low']})
+    - Retest Zones: Resistance Retest ${smc['retest_res']} | Support Retest ${smc['retest_sup']}
+    - Fair Value Gap (FVG): {smc['fvg_note']}
+    - Liquidity & Price Action Read: {smc['pa_signal']}
+    - 5m EMA 20: ${smc['ema20']} | 5m EMA 50: ${smc['ema50']} | RSI(14): {smc['rsi']}
+    - DXY Impact: {smc['dxy_bias']}
     - Overall Bias: {smc['bias_label']} ({smc['bias_score']}/100)
-    - Fundamental Drivers Today: {', '.join(news)}
+    - Fundamental USD News Today:
+    {news_block}
 
-    INSPECT BOTH ATTACHED LIVE TRADINGVIEW CHARTS (15m & 5m) and write a clear, structured trader breakdown:
-    1. HOOK (0-5s): State the live Gold price (${smc['live_price']}), current {smc['bias_label']}, and the key sweep/rejection happening right now.
-    2. SUPPORT & RESISTANCE ZONES (5-18s): Explain the Red Resistance Zone (${smc['strong_high']}), 50% Equilibrium (${smc['equilibrium']}), and Blue Support Zone (${smc['strong_low']}), plus how EMA 20/50 is acting as dynamic support or resistance.
-    3. DXY & FUNDAMENTAL IMPACT (18-30s): Explain how the US Dollar Index ({smc['dxy_now']}) and today's fundamental news ({news}) are pushing or supporting Gold.
-    4. SCENARIO PREDICTION & CTA (30-42s): Give clear "If/Then" watchable zones (e.g. holding above ${smc['intraday_sup']} targets ${smc['equilibrium']}/${smc['intraday_res']}; breaking below opens ${smc['strong_low']}) — strictly educational, never guarantee profits. End with: "Are you watching support buys or resistance sells this session? Drop your bias below."
-    5. CRITICAL VOICE RULE: In 'spoken_script', write numbers cleanly without awkward decimals (e.g., "thirty-five fifty-six" instead of "$3556.50") so the voice sounds completely human and unhurried.
+    RULES FOR 'spoken_script' (Reels Voiceover, ~95 words):
+    - Write numbers cleanly without awkward decimals (e.g. "thirty-five thirty-eight" instead of "$3538.18").
+    - Cover the live session price action, liquidity sweep/rejection ({smc['pa_signal']}), Supply & Demand zones, and DXY impact.
+    - Include this exact natural CTA near the end: "Join our free Telegram channel in the bio or description for full chart markups and live news alerts, and comment your bias below."
+
+    RULES FOR 'telegram_report' (Mentor-style Telegram post under 950 characters so it fits cleanly in a Telegram photo caption):
+    - Act like a patient, disciplined mentor teaching your community how to read the chart.
+    - Include sections with clean emojis:
+      1. 📊 SESSION CONTEXT & SESSION HIGHS/LOWS (Asia, London, NY, PDH/PDL)
+      2. 💧 LIQUIDITY, SWEEPS & FVG IMBALANCE ({smc['pa_signal']} & {smc['fvg_note']})
+      3. 🎯 SUPPLY, DEMAND & RETEST ZONES TO WATCH
+      4. 💵 DXY MACRO & UPCOMING USD NEWS
+      5. 🧠 MENTOR GAMEPLAN & NEXT SCENARIOS (Bullish vs Bearish invalidation rules, educational only)
     {recap_prompt}
 
     Return ONLY valid JSON:
     {{
       "date_label": "{today_label}",
       "session": "{session_name}",
-      "headline": "XAUUSD {session_name} OUTLOOK",
-      "spoken_script": "Full 42-second clear phonetic voiceover script (approx 95-105 words)",
-      "youtube_title": "XAUUSD Live Technical & Fundamental Analysis ({today_label}) | {session_name.title()} #Shorts",
-      "social_caption": "Clean structured breakdown with Resistance, Support, Equilibrium, DXY Impact, Fundamental Catalyst, Watchable Scenarios, Follow @FR6FX CTA, and educational disclaimer (NO hashtags here)",
+      "spoken_script": "Full 42-second phonetic voiceover script including free Telegram CTA",
+      "youtube_title": "XAUUSD {session_name.title()} Smart Money Analysis ({today_label}) | Gold Supply & Demand #Shorts",
+      "social_caption": "Clean Reels caption with Supply/Demand levels, DXY bias, FREE TELEGRAM LINK ({tg_link}), Follow @FR6FX CTA, and educational disclaimer",
+      "telegram_report": "Complete mentor-style Telegram chart breakdown under 950 characters",
       "recap_enabled": false,
       "recap_spoken_script": ""
     }}
@@ -150,7 +172,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     response = None
 
     for model_name in models_to_try:
-        for attempt in range(3):
+        for attempt in range(2):
             try:
                 response = client.models.generate_content(
                     model=model_name,
@@ -164,37 +186,56 @@ def generate_ai_analysis(smc, news, session_name, played_out):
                     break
             except Exception as e:
                 print(f"⚠️ {model_name} attempt {attempt+1} busy: {e}")
-                time.sleep(6)
+                time.sleep(5)
         if response and response.text:
-            print(f"✅ AI analysis generated using {model_name}")
+            print(f"✅ AI Mentor analysis generated using {model_name}")
             break
 
     if response and response.text:
         result = json.loads(response.text)
     else:
-        print("🔄 Gemini busy—using built-in Technical & Fundamental fallback script...")
+        print("🔄 Gemini busy—using built-in Mentor fallback analysis...")
         result = {
             "date_label": today_label,
             "session": session_name,
-            "headline": f"XAUUSD {session_name} OUTLOOK",
             "spoken_script": (
                 f"Gold is trading near {int(smc['live_price'])} heading into the {session_name} with a {smc['bias_label'].lower()}. "
-                f"Right now we are seeing {smc['sweep_event']}. "
-                f"Key resistance sits at the red premium zone around {int(smc['strong_high'])}, fifty percent equilibrium is at {int(smc['equilibrium'])}, and major support rests at the blue discount floor near {int(smc['strong_low'])}. "
-                f"On the macro side, DXY is {smc['dxy_bias']}, while {news} drives fundamental flow. "
-                f"Watch for a liquidity sweep and rejection at support or resistance before confirming entries. Are you watching buys or sells this session? Comment below."
+                f"Looking at session liquidity, {smc['pa_signal']}. "
+                f"Institutional supply sits between {int(smc['retest_res'])} and {int(smc['strong_high'])}, while demand support rests near {int(smc['strong_low'])}. "
+                f"With DXY {smc['dxy_bias']}, wait for a clean sweep and retest before confirming entries. "
+                f"Join our free Telegram channel in the bio or description for full chart markups and live news alerts, and comment your bias below."
             ),
-            "youtube_title": f"XAUUSD Live Technical & Fundamental Analysis ({today_label}) | {session_name.title()} #Shorts",
+            "youtube_title": f"XAUUSD {session_name.title()} Smart Money Analysis ({today_label}) | Gold Supply & Demand #Shorts",
             "social_caption": (
-                f"📊 XAUUSD {session_name} OUTLOOK ({today_label})\n\n"
-                f"🔴 Major Resistance: ${smc['strong_high']} (Intraday: ${smc['intraday_res']})\n"
+                f"📊 XAUUSD {session_name} SMC OUTLOOK ({today_label})\n\n"
+                f"🔴 Supply Zone: {smc['supply_zone']}\n"
                 f"⚖️ 50% Equilibrium: ${smc['equilibrium']}\n"
-                f"🔵 Major Support: ${smc['strong_low']} (Intraday: ${smc['intraday_sup']})\n"
-                f"📈 5m EMA 20 / 50: ${smc['ema20']} / ${smc['ema50']}\n"
-                f"💵 DXY Impact: {smc['dxy_bias']}\n"
-                f"📰 Fundamentals: {news}\n\n"
-                f"💾 Save this post & follow @FR6FX for daily live Gold levels!\n"
+                f"🔵 Demand Zone: {smc['demand_zone']}\n"
+                f"💧 Liquidity Read: {smc['pa_signal']}\n"
+                f"💵 DXY Impact: {smc['dxy_bias']}\n\n"
+                f"📲 Join Free Telegram for Full Chart Markups & News Alerts: https://{tg_link}\n"
+                f"💾 Save this post & follow @FR6FX!\n"
                 f"⚠️ Educational purposes only. Not financial advice."
+            ),
+            "telegram_report": (
+                f"🟡 *FR6 FX MENTOR BRIEF — XAUUSD ({session_name})*\n"
+                f"💰 Live Spot: *${smc['live_price']}* ({smc['bias_label']})\n\n"
+                f"📍 *Session & Daily Liquidity:*\n"
+                f"• PDH / PDL: ${smc['pdh']} / ${smc['pdl']}\n"
+                f"• Asia Range: ${smc['asia_low']} – ${smc['asia_high']}\n"
+                f"• London Range: ${smc['london_low']} – ${smc['london_high']}\n\n"
+                f"💧 *Price Action & Imbalance:*\n"
+                f"• {smc['pa_signal']}\n"
+                f"• {smc['fvg_note']}\n\n"
+                f"🎯 *Zones to Watch:*\n"
+                f"• 🔴 Supply Cap: {smc['supply_zone']} (Retest: ${smc['retest_res']})\n"
+                f"• ⚖️ 50% Equilibrium: ${smc['equilibrium']}\n"
+                f"• 🔵 Demand Floor: {smc['demand_zone']} (Retest: ${smc['retest_sup']})\n\n"
+                f"📰 *DXY & USD Fundamentals:*\n"
+                f"• DXY: {smc['dxy_bias']}\n"
+                f"{news_block}\n\n"
+                f"🧠 *Mentor Rule:* Never chase mid-range candles. Wait for a liquidity sweep into Supply/Demand + 5m structure shift.\n"
+                f"⚠️ _Educational analysis only. Manage risk._"
             ),
             "recap_enabled": False,
             "recap_spoken_script": ""
@@ -237,7 +278,7 @@ async def main():
 
     await capture_tradingview_charts()
     out = generate_ai_analysis(smc, news, session, played_out)
-    print(f"✅ Phase 3 AI Brain complete for {session}. Bonus Recap Triggered: {out.get('recap_enabled')}")
+    print(f"✅ Phase 3 AI Mentor complete for {session}. Bonus Recap Triggered: {out.get('recap_enabled')}")
 
 if __name__ == "__main__":
     asyncio.run(main())
