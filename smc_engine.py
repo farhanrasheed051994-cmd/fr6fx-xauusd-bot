@@ -6,8 +6,12 @@ from datetime import datetime, timezone
 
 def get_smc_market_data():
     """Calculates live Gold S/R, liquidity sweeps, rejections, EMA 20/50, and DXY impact."""
-    gold_15m = yf.download("GC=F", period="5d", interval="15m", progress=False)
-    gold_5m = yf.download("GC=F", period="2d", interval="5m", progress=False)
+    gold_15m = yf.download("XAUUSD=X", period="5d", interval="15m", progress=False)
+    gold_5m = yf.download("XAUUSD=X", period="2d", interval="5m", progress=False)
+    if gold_15m.empty:
+        gold_15m = yf.download("GC=F", period="5d", interval="15m", progress=False)
+        gold_5m = yf.download("GC=F", period="2d", interval="5m", progress=False)
+
     dxy_1h = yf.download("DX-Y.NYB", period="2d", interval="1h", progress=False)
 
     for df in (gold_15m, gold_5m, dxy_1h):
