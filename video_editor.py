@@ -12,7 +12,7 @@ FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
 def draw_live_chart_zones(tv_img, smc):
-    """Aligns Red Resistance, Gold 50% Equilibrium & Blue Support bands proportionally to live price."""
+    """Aligns Red Resistance, Gold 50% Equilibrium & Blue Support bands strictly inside the main candle pane (above RSI)."""
     overlay = Image.new("RGBA", tv_img.size, (0, 0, 0, 0))
     odraw = ImageDraw.Draw(overlay)
     cw, ch = tv_img.size  # 940 x 760
@@ -22,23 +22,22 @@ def draw_live_chart_zones(tv_img, smc):
     sh = float(smc["strong_high"])
     sl = float(smc["strong_low"])
     eq = float(smc["equilibrium"])
-    lp = float(smc["live_price"])
 
-    # Map price range into chart plot area (Y: 60 to 635)
+    # Keep all zones strictly inside main candlestick pane (Y: 55 to 490, well above RSI sub-pane)
     span = max(sh - sl, 1.0)
     def price_to_y(p):
         ratio = (sh - p) / span
-        return int(max(55, min(635, 65 + ratio * 560)))
+        return int(max(55, min(490, 60 + ratio * 425)))
 
     y_res = price_to_y(sh)
     y_eq = price_to_y(eq)
     y_sup = price_to_y(sl)
 
     # 1. Red Resistance Zone
-    odraw.rectangle([(10, y_res), (plot_right, y_res + 58)], fill=(239, 68, 68, 52))
+    odraw.rectangle([(10, y_res), (plot_right, y_res + 46)], fill=(239, 68, 68, 52))
     odraw.line([(10, y_res), (plot_right, y_res)], fill=(239, 68, 68, 230), width=2)
-    odraw.rounded_rectangle([(18, y_res + 8), (305, y_res + 38)], radius=6, fill=(185, 28, 28, 230))
-    odraw.text((28, y_res + 13), f"RESISTANCE  ${sh}", font=f_zone, fill=(255, 255, 255, 255))
+    odraw.rounded_rectangle([(18, y_res + 7), (305, y_res + 37)], radius=6, fill=(185, 28, 28, 230))
+    odraw.text((28, y_res + 12), f"RESISTANCE  ${sh}", font=f_zone, fill=(255, 255, 255, 255))
 
     # 2. Gold 50% Equilibrium Dashed Line
     for x in range(10, plot_right, 22):
@@ -46,17 +45,16 @@ def draw_live_chart_zones(tv_img, smc):
     odraw.rounded_rectangle([(18, y_eq - 36), (315, y_eq - 6)], radius=6, fill=(161, 98, 7, 235))
     odraw.text((28, y_eq - 31), f"50% EQ  ${eq}", font=f_zone, fill=(255, 255, 255, 255))
 
-    # 3. Blue Support Zone
-    odraw.rectangle([(10, y_sup - 58), (plot_right, y_sup)], fill=(59, 130, 246, 56))
+    # 3. Blue Support Zone (Positioned above RSI divider line)
+    odraw.rectangle([(10, y_sup - 46), (plot_right, y_sup)], fill=(59, 130, 246, 56))
     odraw.line([(10, y_sup), (plot_right, y_sup)], fill=(59, 130, 246, 230), width=2)
     odraw.rounded_rectangle([(18, y_sup - 38), (290, y_sup - 8)], radius=6, fill=(29, 78, 216, 230))
     odraw.text((28, y_sup - 33), f"SUPPORT  ${sl}", font=f_zone, fill=(255, 255, 255, 255))
 
     return Image.alpha_composite(tv_img, overlay)
 
-
 def build_fr6fx_frame(tv_png_path, out_png_path, session_label, tf_badge, headline_text, smc, is_recap=False):
-    """Builds a safe-margined 1080x1920 FR6 FX mobile frame with live chart zones & bias meter."""
+    """Builds a clean 1080x1920 FR6 FX layout without duplicate session headline."""
     W, H = 1080, 1920
     canvas = Image.new("RGBA", (W, H), (9, 12, 18, 255))
     draw = ImageDraw.Draw(canvas)
@@ -66,57 +64,52 @@ def build_fr6fx_frame(tv_png_path, out_png_path, session_label, tf_badge, headli
     for y in range(0, H, 90):
         draw.line([(0, y), (W, y)], fill=(18, 23, 34, 255), width=1)
 
-    f_brand = ImageFont.truetype(FONT_BOLD, 25)
-    f_head = ImageFont.truetype(FONT_BOLD, 36)
-    f_sub = ImageFont.truetype(FONT_BOLD, 21)
+    f_brand = ImageFont.truetype(FONT_BOLD, 27)
+    f_sub = ImageFont.truetype(FONT_BOLD, 22)
     f_pill_lbl = ImageFont.truetype(FONT_BOLD, 18)
     f_pill_val = ImageFont.truetype(FONT_BOLD, 25)
     f_disc = ImageFont.truetype(FONT_REG, 20)
 
-    # Safe horizontal margins: X = 70 to 1010 (940px wide) so mobile UI never clips text
+    # 1. Single Clean Header Pill: FR6 FX • LONDON/NEW YORK SESSION [15M CHART]
     accent = (16, 185, 129, 255) if is_recap else (245, 180, 35, 255)
-    draw.rounded_rectangle([(70, 205), (1010, 265)], radius=12, fill=(18, 24, 36, 255), outline=accent, width=2)
-    draw.ellipse([(92, 226), (110, 244)], fill=(239, 68, 68, 255))
-    draw.text((124, 221), f"FR6 FX  •  {session_label}  [{tf_badge}]", font=f_brand, fill=accent)
+    draw.rounded_rectangle([(70, 215), (1010, 278)], radius=12, fill=(18, 24, 36, 255), outline=accent, width=2)
+    draw.ellipse([(92, 237), (110, 255)], fill=(239, 68, 68, 255))
+    draw.text((124, 231), f"FR6 FX  •  {session_label}  [{tf_badge}]", font=f_brand, fill=accent)
 
-    # Clean Institutional Headline (No cheesy questions)
-    clean_head = headline_text.replace("?", "").strip()[:34]
-    draw.text((70, 282), clean_head, font=f_head, fill=(255, 255, 255, 255))
-
-    # Sentiment Bias & DXY Macro Bar (Y: 334..376)
+    # 2. Sentiment Bias & DXY Macro Bar (Moved up cleanly to Y: 294..340)
     bias_lbl = smc.get("bias_label", "MARKET OUTLOOK")
     bias_col = (52, 211, 153, 255) if "BULLISH" in bias_lbl else ((248, 113, 113, 255) if "BEARISH" in bias_lbl else (252, 211, 77, 255))
-    draw.rounded_rectangle([(70, 334), (1010, 376)], radius=8, fill=(20, 27, 40, 255))
-    draw.text((86, 343), f"{bias_lbl}  |  DXY: {smc.get('dxy_now', '')}  |  GOLD: ${smc['live_price']}", font=f_sub, fill=bias_col)
+    draw.rounded_rectangle([(70, 294), (1010, 340)], radius=8, fill=(20, 27, 40, 255))
+    draw.text((86, 304), f"{bias_lbl}  |  DXY: {smc.get('dxy_now', '')}  |  GOLD: ${smc['live_price']}", font=f_sub, fill=bias_col)
 
-    # Authentic TradingView Chart Window with Live Zones Drawn On Top (940x760 at Y=392..1152)
-    tv_img = Image.open(tv_png_path).convert("RGBA").resize((940, 760), Image.Resampling.LANCZOS)
+    # 3. Authentic TradingView Chart Window (940x790 at Y=358..1148)
+    tv_img = Image.open(tv_png_path).convert("RGBA").resize((940, 790), Image.Resampling.LANCZOS)
     if not is_recap:
         tv_img = draw_live_chart_zones(tv_img, smc)
 
-    mask = Image.new("L", (940, 760), 0)
-    ImageDraw.Draw(mask).rounded_rectangle([(0, 0), (940, 760)], radius=18, fill=255)
-    draw.rounded_rectangle([(68, 390), (1012, 1154)], radius=20, outline=(45, 55, 75, 255), width=3)
-    canvas.paste(tv_img, (70, 392), mask)
+    mask = Image.new("L", (940, 790), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([(0, 0), (940, 790)], radius=18, fill=255)
+    draw.rounded_rectangle([(68, 356), (1012, 1150)], radius=20, outline=(45, 55, 75, 255), width=3)
+    canvas.paste(tv_img, (70, 358), mask)
 
-    # 3 Equal-Width Level Cards Inside Safe Margins (X: 70..1010, Y: 1172..1262)
+    # 4. 3 Equal-Width Level Cards (Y: 1168..1258)
     if not is_recap:
-        draw.rounded_rectangle([(70, 1172), (370, 1262)], radius=12, fill=(52, 18, 26, 255), outline=(239, 68, 68, 255), width=2)
-        draw.text((88, 1184), "RESISTANCE CAP", font=f_pill_lbl, fill=(248, 113, 113, 255))
-        draw.text((88, 1214), f"${smc['strong_high']}", font=f_pill_val, fill=(255, 255, 255, 255))
+        draw.rounded_rectangle([(70, 1168), (370, 1258)], radius=12, fill=(52, 18, 26, 255), outline=(239, 68, 68, 255), width=2)
+        draw.text((88, 1180), "RESISTANCE CAP", font=f_pill_lbl, fill=(248, 113, 113, 255))
+        draw.text((88, 1210), f"${smc['strong_high']}", font=f_pill_val, fill=(255, 255, 255, 255))
 
-        draw.rounded_rectangle([(390, 1172), (690, 1262)], radius=12, fill=(48, 38, 16, 255), outline=(245, 180, 35, 255), width=2)
-        draw.text((408, 1184), "50% EQUILIBRIUM", font=f_pill_lbl, fill=(252, 211, 77, 255))
-        draw.text((408, 1214), f"${smc['equilibrium']}", font=f_pill_val, fill=(255, 255, 255, 255))
+        draw.rounded_rectangle([(390, 1168), (690, 1258)], radius=12, fill=(48, 38, 16, 255), outline=(245, 180, 35, 255), width=2)
+        draw.text((408, 1180), "50% EQUILIBRIUM", font=f_pill_lbl, fill=(252, 211, 77, 255))
+        draw.text((408, 1210), f"${smc['equilibrium']}", font=f_pill_val, fill=(255, 255, 255, 255))
 
-        draw.rounded_rectangle([(710, 1172), (1010, 1262)], radius=12, fill=(16, 36, 58, 255), outline=(59, 130, 246, 255), width=2)
-        draw.text((728, 1184), "SUPPORT FLOOR", font=f_pill_lbl, fill=(96, 165, 250, 255))
-        draw.text((728, 1214), f"${smc['strong_low']}", font=f_pill_val, fill=(255, 255, 255, 255))
+        draw.rounded_rectangle([(710, 1168), (1010, 1258)], radius=12, fill=(16, 36, 58, 255), outline=(59, 130, 246, 255), width=2)
+        draw.text((728, 1180), "SUPPORT FLOOR", font=f_pill_lbl, fill=(96, 165, 250, 255))
+        draw.text((728, 1210), f"${smc['strong_low']}", font=f_pill_val, fill=(255, 255, 255, 255))
     else:
-        draw.rounded_rectangle([(70, 1172), (1010, 1262)], radius=12, fill=(14, 48, 38, 255), outline=(16, 185, 129, 255), width=3)
-        draw.text((260, 1202), "PREVIOUS LEVEL PLAYED OUT ✅", font=f_brand, fill=(52, 211, 153, 255))
+        draw.rounded_rectangle([(70, 1168), (1010, 1258)], radius=12, fill=(14, 48, 38, 255), outline=(16, 185, 129, 255), width=3)
+        draw.text((260, 1198), "PREVIOUS LEVEL PLAYED OUT ✅", font=f_brand, fill=(52, 211, 153, 255))
 
-    draw.text((210, 1620), "@FR6FX  •  Educational purposes only. Not financial advice.", font=f_disc, fill=(135, 145, 165, 255))
+    draw.text((210, 1560), "@FR6FX  •  Educational purposes only. Not financial advice.", font=f_disc, fill=(135, 145, 165, 255))
     canvas.convert("RGB").save(out_png_path, quality=95)
 async def synthesize_human_voice(spoken_text, raw_mp3, clean_mp3):
     clean_text = re.sub(r"[^\w\s.,!?'-]", " ", str(spoken_text)).strip()
