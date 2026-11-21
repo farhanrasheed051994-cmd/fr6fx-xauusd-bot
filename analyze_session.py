@@ -66,7 +66,7 @@ async def capture_tradingview_charts():
     os.makedirs("assets", exist_ok=True)
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), SimpleHTTPRequestHandler)
-    port = server.server_address
+    port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
