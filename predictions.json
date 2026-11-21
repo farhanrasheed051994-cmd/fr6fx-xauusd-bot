@@ -61,6 +61,21 @@
     "equilibrium": 3538.18,
     "strong_low": 3503.18,
     "saved_5m_chart": "assets/history_20261121_1440_5m.png",
+    "evaluated": true,
+    "outcome": {
+      "won": true,
+      "setup": "Supply Zone rejection at $3573.18 -> Equilibrium $3538.18",
+      "old_session": "NEW YORK SESSION",
+      "old_chart": "assets/history_20261121_1440_5m.png"
+    }
+  },
+  {
+    "timestamp": "20261121_2112",
+    "session": "XAUUSD MARKET",
+    "strong_high": 3686.08,
+    "equilibrium": 3605.88,
+    "strong_low": 3525.68,
+    "saved_5m_chart": "assets/history_20261121_2112_5m.png",
     "evaluated": false
   }
 ]
