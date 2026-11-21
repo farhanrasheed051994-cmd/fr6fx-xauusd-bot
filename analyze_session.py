@@ -64,6 +64,7 @@ def check_previous_call_played_out(smc):
 
 async def capture_tradingview_charts():
     os.makedirs("assets", exist_ok=True)
+    os.makedirs("assets/raw_vid", exist_ok=True)
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), SimpleHTTPRequestHandler)
     _, port = server.server_address
@@ -78,24 +79,43 @@ async def capture_tradingview_charts():
                 headless=True,
                 args=["--no-sandbox", "--disable-dev-shm-usage"]
             )
-            context = await browser.new_context(
-                viewport={"width": 540, "height": 620},
-                device_scale_factor=2,
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
+            # 1. Record 18 seconds of LIVE moving 15M TradingView chart
+            ctx_15 = await browser.new_context(
+                viewport={"width": 940, "height": 800},
+                device_scale_factor=1,
+                record_video_dir="assets/raw_vid",
+                record_video_size={"width": 940, "height": 800}
             )
-            page = await context.new_page()
+            page_15 = await ctx_15.new_page()
+            await page_15.goto(f"{base_url}?interval=15", wait_until="networkidle", timeout=30000)
+            await page_15.wait_for_timeout(7000)   # Let chart load completely
+            await page_15.screenshot(path="assets/tv_15m.png")
+            await page_15.wait_for_timeout(16000)  # Record 16s of live ticking price & countdown
+            vid_15_path = await page_15.video.path()
+            await ctx_15.close()
+            os.replace(vid_15_path, "assets/tv_15m.webm")
 
-            await page.goto(f"{base_url}?interval=15", wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(8000)
-            await page.screenshot(path="assets/tv_15m.png")
-
-            await page.goto(f"{base_url}?interval=5", wait_until="networkidle", timeout=30000)
-            await page.wait_for_timeout(8000)
-            await page.screenshot(path="assets/tv_5m.png")
+            # 2. Record 18 seconds of LIVE moving 5M TradingView chart
+            ctx_5 = await browser.new_context(
+                viewport={"width": 940, "height": 800},
+                device_scale_factor=1,
+                record_video_dir="assets/raw_vid",
+                record_video_size={"width": 940, "height": 800}
+            )
+            page_5 = await ctx_5.new_page()
+            await page_5.goto(f"{base_url}?interval=5", wait_until="networkidle", timeout=30000)
+            await page_5.wait_for_timeout(7000)
+            await page_5.screenshot(path="assets/tv_5m.png")
+            await page_5.wait_for_timeout(16000)  # Record 16s of live 5M price movement
+            vid_5_path = await page_5.video.path()
+            await ctx_5.close()
+            os.replace(vid_5_path, "assets/tv_5m.webm")
 
             await browser.close()
     finally:
         server.shutdown()
+
 def generate_ai_analysis(smc, news, session_name, played_out):
     client = genai.Client(
         api_key=os.environ["GEMINI_API_KEY"],
