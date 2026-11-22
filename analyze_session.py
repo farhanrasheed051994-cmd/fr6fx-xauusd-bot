@@ -89,9 +89,9 @@ async def capture_tradingview_charts():
             )
             page_15 = await ctx_15.new_page()
             await page_15.goto(f"{base_url}?interval=15", wait_until="networkidle", timeout=30000)
-            await page_15.wait_for_timeout(7000)   # Let chart load completely
+            await page_15.wait_for_timeout(7000)
             await page_15.screenshot(path="assets/tv_15m.png")
-            await page_15.wait_for_timeout(16000)  # Record 16s of live ticking price & countdown
+            await page_15.wait_for_timeout(18000)
             vid_15_path = await page_15.video.path()
             await ctx_15.close()
             os.replace(vid_15_path, "assets/tv_15m.webm")
@@ -107,7 +107,7 @@ async def capture_tradingview_charts():
             await page_5.goto(f"{base_url}?interval=5", wait_until="networkidle", timeout=30000)
             await page_5.wait_for_timeout(7000)
             await page_5.screenshot(path="assets/tv_5m.png")
-            await page_5.wait_for_timeout(16000)  # Record 16s of live 5M price movement
+            await page_5.wait_for_timeout(18000)
             vid_5_path = await page_5.video.path()
             await ctx_5.close()
             os.replace(vid_5_path, "assets/tv_5m.webm")
@@ -115,7 +115,6 @@ async def capture_tradingview_charts():
             await browser.close()
     finally:
         server.shutdown()
-
 def generate_ai_analysis(smc, news, session_name, played_out):
     client = genai.Client(
         api_key=os.environ["GEMINI_API_KEY"],
@@ -152,7 +151,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     - 50% Equilibrium Pivot: ${smc['equilibrium']}
     - Institutional Demand Zone (Support): {smc['demand_zone']} (Strong Low: ${smc['strong_low']})
     - Retest Zones: Resistance Retest ${smc['retest_res']} | Support Retest ${smc['retest_sup']}
-    - Fair Value Gap (FVG): {smc['fvg_note']}
+    - Fair Value Gap: {smc['fvg_note']}
     - Liquidity & Price Action Read: {smc['pa_signal']}
     - 5m EMA 20: ${smc['ema20']} | 5m EMA 50: ${smc['ema50']} | RSI(14): {smc['rsi']}
     - DXY Impact: {smc['dxy_bias']}
@@ -161,7 +160,8 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     {news_block}
 
     RULES FOR 'spoken_script' (Reels Voiceover, ~95 words):
-    - Write numbers cleanly without awkward decimals (e.g. "thirty-five thirty-eight" instead of "$3538.18").
+    - Write numbers cleanly without awkward decimals (e.g. "thirty-five thirty-eight" instead of "$3538.18", and "one-oh-three point eight" for DXY).
+    - ALWAYS spell out "fair value gap" instead of "FVG" so text-to-speech pronounces every word clearly.
     - Cover the live session price action, liquidity sweep/rejection ({smc['pa_signal']}), Supply & Demand zones, and DXY impact.
     - Include this exact natural CTA near the end: "Join our free Telegram channel in the bio or description for full chart markups and live news alerts, and comment your bias below."
 
@@ -169,7 +169,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     - Act like a patient, disciplined mentor teaching your community how to read the chart.
     - Include sections with clean emojis:
       1. 📊 SESSION CONTEXT & SESSION HIGHS/LOWS (Asia, London, NY, PDH/PDL)
-      2. 💧 LIQUIDITY, SWEEPS & FVG IMBALANCE ({smc['pa_signal']} & {smc['fvg_note']})
+      2. 💧 LIQUIDITY, SWEEPS & FAIR VALUE GAP ({smc['pa_signal']} & {smc['fvg_note']})
       3. 🎯 SUPPLY, DEMAND & RETEST ZONES TO WATCH
       4. 💵 DXY MACRO & UPCOMING USD NEWS
       5. 🧠 MENTOR GAMEPLAN & NEXT SCENARIOS (Bullish vs Bearish invalidation rules, educational only)
@@ -220,7 +220,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
             "session": session_name,
             "spoken_script": (
                 f"Gold is trading near {int(smc['live_price'])} heading into the {session_name} with a {smc['bias_label'].lower()}. "
-                f"Looking at session liquidity, {smc['pa_signal']}. "
+                f"Looking at session liquidity, {smc['pa_signal'].replace('FVG', 'fair value gap')}. "
                 f"Institutional supply sits between {int(smc['retest_res'])} and {int(smc['strong_high'])}, while demand support rests near {int(smc['strong_low'])}. "
                 f"With DXY {smc['dxy_bias']}, wait for a clean sweep and retest before confirming entries. "
                 f"Join our free Telegram channel in the bio or description for full chart markups and live news alerts, and comment your bias below."
