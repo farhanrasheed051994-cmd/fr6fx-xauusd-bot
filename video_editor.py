@@ -132,9 +132,9 @@ def build_background_frame(out_png_path, session_label, smc, is_recap=False):
         draw.text((260, 1206), "PREVIOUS LEVEL PLAYED OUT ✅", font=f_brand, fill=(52, 211, 153, 255))
 
     tg_link = os.environ.get("TELEGRAM_LINK", "t.me/fr6fx_official").strip()
-    draw.rounded_rectangle([(190, 1485), (890, 1532)], radius=10, fill=(16, 38, 56, 255), outline=(56, 189, 248, 255), width=2)
-    draw.text((225, 1496), f"FREE TELEGRAM CHARTS & NEWS: {tg_link}", font=f_tg, fill=(125, 211, 252, 255))
-    draw.text((215, 1550), "@FR6FX  •  Educational purposes only. Not financial advice.", font=f_disc, fill=(135, 145, 165, 255))
+    draw.rounded_rectangle([(190, 1500), (890, 1546)], radius=10, fill=(16, 38, 56, 255), outline=(56, 189, 248, 255), width=2)
+    draw.text((225, 1511), f"FREE TELEGRAM CHARTS & NEWS: {tg_link}", font=f_tg, fill=(125, 211, 252, 255))
+    draw.text((215, 1564), "@FR6FX  •  Educational purposes only. Not financial advice.", font=f_disc, fill=(135, 145, 165, 255))
 
     canvas.convert("RGB").save(out_png_path, quality=95)
 async def synthesize_human_voice(spoken_text, raw_mp3, clean_mp3):
@@ -208,11 +208,11 @@ def build_pop_captions_and_cues(audio_mp3, out_ass):
             else:
                 raw_words.append({"start": w.start, "end": w.end, "text": txt})
 
-    # Fallback cue timestamps if any keyword wasn't caught verbatim
     t_supply = t_supply if t_supply is not None else 6.0
     t_eq = t_eq if t_eq is not None else 11.0
     t_demand = t_demand if t_demand is not None else 16.0
 
+    # MarginV=535 places captions cleanly above the blue Telegram pill at Y=1500
     ass_header = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
@@ -220,7 +220,7 @@ PlayResY: 1920
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,DejaVu Sans,54,&H00FFFFFF,&H00000000,&H99090C12,-1,0,0,0,100,100,0,0,3,14,0,2,80,80,455,1
+Style: Default,DejaVu Sans,54,&H00FFFFFF,&H00000000,&H99090C12,-1,0,0,0,100,100,0,0,3,14,0,2,80,80,535,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -247,7 +247,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return t_supply, t_eq, t_demand
 
 def compile_live_video(bg_png, vid_15m, vid_5m, audio_mp3, ass_file, cues, output_mp4):
-    """Composites live moving 15M->5M TradingView video + voice-synced animated zone wipes."""
+    """Composites live moving 15M->5M TradingView video (trimmed past black fade-in) + voice-synced zone wipes + subtle studio bed."""
     dur_str = subprocess.check_output([
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", audio_mp3
@@ -256,15 +256,14 @@ def compile_live_video(bg_png, vid_15m, vid_5m, audio_mp3, ass_file, cues, outpu
     half = dur / 2.0
     t_sup, t_eq, t_dem = cues
 
-    # Smooth 0.7s left-to-right wipe expression for each zone layer at (X=70, Y=356)
     wipe_sup = f"if(lt(t,{t_sup}),-940,min(70,-940+((t-{t_sup})/0.7)*1010))"
     wipe_eq = f"if(lt(t,{t_eq}),-940,min(70,-940+((t-{t_eq})/0.7)*1010))"
     wipe_dem = f"if(lt(t,{t_dem}),-940,min(70,-940+((t-{t_dem})/0.7)*1010))"
 
     filter_graph = (
         f"[0:v]scale=1080:1920,fps=30,format=rgba[bg];"
-        f"[1:v]scale=940:800,fps=30,trim=duration={half},setpts=PTS-STARTPTS[c15];"
-        f"[2:v]scale=940:800,fps=30,trim=duration={dur - half + 0.5},setpts=PTS-STARTPTS[c5];"
+        f"[1:v]scale=940:800,fps=30,trim=start=1.5:duration={half},setpts=PTS-STARTPTS[c15];"
+        f"[2:v]scale=940:800,fps=30,trim=start=1.5:duration={dur - half + 0.5},setpts=PTS-STARTPTS[c5];"
         f"[c15][c5]concat=n=2:v=1:a=0,format=rgba[chart];"
         f"[bg][chart]overlay=x=70:y=356:shortest=1[v_chart];"
         f"[3:v]format=rgba[lsup];"
@@ -274,7 +273,10 @@ def compile_live_video(bg_png, vid_15m, vid_5m, audio_mp3, ass_file, cues, outpu
         f"[v_z1][leq]overlay=x='{wipe_eq}':y=356:enable='gte(t,{t_eq})'[v_z2];"
         f"[v_z2][ldem]overlay=x='{wipe_dem}':y=356:enable='gte(t,{t_dem})'[v_z3];"
         f"[v_z3]drawbox=x=0:y=1908:w='iw*(t/{dur})':h=12:color=0xF5B423:t=fill[vbar];"
-        f"[vbar]ass={ass_file}[vout]"
+        f"[vbar]ass={ass_file}[vout];"
+        f"anoisesrc=color=pink:amplitude=0.015:duration={dur + 1.0},lowpass=f=180[amb];"
+        f"[6:a]aresample=44100,pan=stereo|c0=c0|c1=c0[vox];"
+        f"[vox][amb]amix=inputs=2:duration=first:dropout_transition=2[aout]"
     )
 
     subprocess.run([
@@ -287,7 +289,7 @@ def compile_live_video(bg_png, vid_15m, vid_5m, audio_mp3, ass_file, cues, outpu
         "-loop", "1", "-t", str(dur + 1.0), "-i", "assets/layer_demand.png",
         "-i", audio_mp3,
         "-filter_complex", filter_graph,
-        "-map", "[vout]", "-map", "6:a",
+        "-map", "[vout]", "-map", "[aout]",
         "-c:v", "libx264", "-profile:v", "main", "-level", "4.0", "-preset", "fast", "-crf", "22", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
         "-movflags", "+faststart", "-shortest",
