@@ -102,7 +102,11 @@ def overlay_smc_hud_on_chart(png_path, tf_label, smc):
 async def capture_real_tradingview_charts(smc):
     chart_url = os.environ.get("TRADINGVIEW_CHART_URL", "").strip()
     if not chart_url:
-        chart_url = "https://tradingview.com"
+        chart_url = "https://" + "://tradingview.com"
+    elif "symbol=" not in chart_url:
+        sep = "&" if "?" in chart_url else "?"
+        chart_url = f"{chart_url}{sep}symbol=OANDA:XAUUSD"
+
     session_id = os.environ.get("TRADINGVIEW_SESSION_ID", "").strip()
     session_sign = os.environ.get("TRADINGVIEW_SESSION_SIGN", "").strip()
 
@@ -145,13 +149,13 @@ async def capture_real_tradingview_charts(smc):
 
         page = await context.new_page()
         await page.goto(chart_url, wait_until="domcontentloaded", timeout=45000)
-        await page.wait_for_timeout(6500)
+        await page.wait_for_timeout(6000)
 
         for esc_try in range(3):
             await page.keyboard.press("Escape")
-            await page.wait_for_timeout(300)
+            await page.wait_for_timeout(250)
 
-            await page.evaluate("""() => {
+        await page.evaluate("""() => {
             const selectors = new Array(
                 'div.tv-dialog__close',
                 'button.tv-dialog__close',
@@ -165,6 +169,13 @@ async def capture_real_tradingview_charts(smc):
             }
         }""")
 
+        await page.mouse.click(270, 250)
+        await page.wait_for_timeout(300)
+        await page.keyboard.type("OANDA:XAUUSD", delay=55)
+        await page.wait_for_timeout(400)
+        await page.keyboard.press("Enter")
+        await page.wait_for_timeout(3000)
+
         for tf_code, tf_label, out_png in (("15", "15M", "assets/tv_15m.png"), ("5", "5M", "assets/tv_5m.png")):
             await page.mouse.click(270, 250)
             await page.wait_for_timeout(300)
@@ -174,7 +185,7 @@ async def capture_real_tradingview_charts(smc):
             await page.wait_for_timeout(2500)
             await page.keyboard.press("Alt+r")
             await page.wait_for_timeout(1200)
-            await page.screenshot(path=out_png, full_page=False)
+            await page.screenshot(path=out_png, full_page=False, timeout=15000)
             overlay_smc_hud_on_chart(out_png, tf_label, smc)
             print(f"📸 Real TradingView {tf_label} Retina chart captured -> {out_png}")
 
