@@ -499,7 +499,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
         # Tier 2: Groq Free API (Ultra-fast Llama 3.3 70B JSON)
     if not result and os.environ.get("GROQ_API_KEY"):
         try:
-            groq_url = "https://" + "://groq.com" + "/openai/v1/chat/completions"
+            groq_url = "".join(("https://", "api.", "groq.", "com/openai/v1/chat/completions"))
             g_resp = req_ai.post(
                 groq_url,
                 headers={
@@ -528,7 +528,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     # Tier 3: GitHub Models Free Inference (Uses built-in GITHUB_TOKEN)
     if not result and os.environ.get("GITHUB_TOKEN"):
         try:
-            gh_url = "https://" + "models.github.ai" + "/inference/chat/completions"
+            gh_url = "".join(("https://", "models.", "github.", "ai/inference/chat/completions"))
             gh_resp = req_ai.post(
                 gh_url,
                 headers={
