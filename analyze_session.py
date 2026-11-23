@@ -463,11 +463,12 @@ def generate_ai_analysis(smc, news, session_name, played_out):
       "recap_spoken_script": ""
     }}
     """
-    models_to_try = ("gemini-2.5-flash", "gemini-2.5-flash-lite")
-    response = None
+        import requests as req_ai
+    result = None
 
-    for model_name in models_to_try:
-        for attempt in range(2):
+    # Tier 1: Google Gemini (Multimodal Vision + SMC Data)
+    if os.environ.get("GEMINI_API_KEY"):
+        for model_name in ("gemini-2.5-flash", "gemini-2.5-flash-lite"):
             try:
                 response = client.models.generate_content(
                     model=model_name,
@@ -478,19 +479,71 @@ def generate_ai_analysis(smc, news, session_name, played_out):
                     )
                 )
                 if response and response.text:
+                    result = json.loads(response.text)
+                    print(f"✅ AI Mentor analysis generated using {model_name}")
                     break
             except Exception as e:
-                print(f"⚠️ {model_name} attempt {attempt + 1} busy: {e}")
-                time.sleep(5)
-        if response and response.text:
-            print(f"✅ AI Mentor analysis generated using {model_name}")
-            break
+                print(f"⚠️ {model_name} busy: {e}")
 
-    if response and response.text:
-        result = json.loads(response.text)
+    # Tier 2: Groq Free API (Ultra-fast Llama 3.3 70B JSON)
+    if not result and os.environ.get("GROQ_API_KEY"):
+        try:
+            g_resp = req_ai.post(
+                "https://groq.com",
+                headers={
+                    "Authorization": f"Bearer {os.environ.get('GROQ_API_KEY')}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": ({"role": "user", "content": prompt},),
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0.35
+                },
+                timeout=25
+            )
+            if g_resp.status_code == 200:
+                raw_json = g_resp.json().get("choices", ()).__getitem__(0).get("message", {}).get("content", "")
+                if raw_json:
+                    result = json.loads(raw_json)
+                    print("✅ AI Mentor analysis generated using Groq (Llama-3.3-70B)")
+            else:
+                print(f"⚠️ Groq status {g_resp.status_code}: {g_resp.text[:120]}")
+        except Exception as e:
+            print(f"⚠️ Groq fallback warning: {e}")
+
+    # Tier 3: GitHub Models Free Inference (Uses built-in GITHUB_TOKEN)
+    if not result and os.environ.get("GITHUB_TOKEN"):
+        try:
+            gh_resp = req_ai.post(
+                "https://azure.com",
+                headers={
+                    "Authorization": f"Bearer {os.environ.get('GITHUB_TOKEN')}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": ({"role": "user", "content": prompt},),
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0.35
+                },
+                timeout=25
+            )
+            if gh_resp.status_code == 200:
+                raw_json = gh_resp.json().get("choices", ()).__getitem__(0).get("message", {}).get("content", "")
+                if raw_json:
+                    result = json.loads(raw_json)
+                    print("✅ AI Mentor analysis generated using GitHub Models (GPT-4o-mini)")
+            else:
+                print(f"⚠️ GitHub Models status {gh_resp.status_code}")
+        except Exception as e:
+            print(f"⚠️ GitHub Models fallback warning: {e}")
+
+    # Tier 4: Built-in Mentor Fallback (100% offline-safe)
+    if result:
         result.update({"spoken_script": clean_spoken_text(result.get("spoken_script", ""))})
     else:
-        print("🔄 Gemini busy—using built-in Mentor fallback analysis...")
+        print("🔄 All cloud AIs busy—using built-in Mentor fallback analysis...")
         dxy_val = int(round(float(smc.get("dxy_now"))))
         dxy_dir = "pushing higher" if "Bullish" in str(dxy_b) else "pulling back"
         clean_pa = clean_spoken_text(pa_sig)
