@@ -247,22 +247,32 @@ def get_usd_fundamental_context():
     try:
         resp = requests.get(
             "https://faireconomy.media",
-            headers={"User-Agent": "Mozilla/5.0"},
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "application/json"
+            },
             timeout=10
         )
-        data = resp.json()
-        today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        events = list()
-        for ev in data:
-            if (
-                ev.get("country") == "USD"
-                and ev.get("impact") in ("High", "Medium")
-                and str(ev.get("date", "")).startswith(today_iso)
-            ):
-                dt_str = str(ev.get("date", ""))
-                ev_time = dt_str.__getitem__(slice(11, 16)) if len(dt_str) >= 16 else "TBD"
-                events.append(f"• {ev.get('title')} ({ev.get('impact')} Impact — {ev_time} UTC)")
-        return events if events else list(("• No major red-folder USD releases today; session liquidity & yields driving flow",))
-    except Exception as e:
-        print(f"⚠️ Economic calendar fetch warning: {e}")
-        return list(("• US Treasury yields & Dollar Index flow driving session volatility",))
+        if resp.status_code == 200 and resp.text.strip().startswith("{") or resp.text.strip().startswith(chr(91)):
+            data = resp.json()
+            today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            events = list()
+            for ev in data:
+                if (
+                    ev.get("country") == "USD"
+                    and ev.get("impact") in ("High", "Medium")
+                    and str(ev.get("date", "")).startswith(today_iso)
+                ):
+                    dt_str = str(ev.get("date", ""))
+                    ev_time = dt_str.__getitem__(slice(11, 16)) if len(dt_str) >= 16 else "TBD"
+                    events.append(f"• {ev.get('title')} ({ev.get('impact')} Impact — {ev_time} UTC)")
+            if events:
+                return events
+    except Exception:
+        pass
+
+    day_name = datetime.now(timezone.utc).strftime("%A")
+    return list((
+        f"• {day_name} London/NY Session Liquidity & US 10Y Treasury Yields driving XAUUSD flow",
+        "• Watch DXY reaction at session highs/lows & Federal Reserve speaker headlines"
+    ))
