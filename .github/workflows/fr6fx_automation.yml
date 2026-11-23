@@ -36,6 +36,7 @@ jobs:
 
       - name: Phase 2 & 3 - Capture Live TradingView & Run Gemini SMC Analysis
         env:
+          PYTHONUNBUFFERED: "1"
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TELEGRAM_LINK: ${{ secrets.TELEGRAM_LINK }}
           TRADINGVIEW_CHART_URL: ${{ secrets.TRADINGVIEW_CHART_URL }}
