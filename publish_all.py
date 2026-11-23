@@ -14,12 +14,17 @@ FB_GRAPH_BASE = "https://facebook.com"
 FB_RUPLOAD_BASE = "https://facebook.com"
 TG_API_BASE = "https://telegram.org"
 
+def clean_secret(name):
+    """Strips accidental newlines, spaces, or quotes from GitHub Secrets."""
+    val = os.environ.get(name, "")
+    return re.sub(r"[\r\n\t\"']", "", val).strip()
+
 def post_to_telegram_channel(chart_png_path, mentor_report):
     """Posts the annotated TradingView chart image first, then the full SEO mentor analysis as a separate message."""
-    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    bot_token = clean_secret("TELEGRAM_BOT_TOKEN")
+    chat_id = clean_secret("TELEGRAM_CHAT_ID")
     if not bot_token or not chat_id:
-        print("⚠️ Telegram secrets not set—skipping Telegram post.")
+        print("⚠️ TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is empty—skipping Telegram post.")
         return
 
     # 1. Send Annotated Chart Image
@@ -68,14 +73,22 @@ def post_to_telegram_channel(chart_png_path, mentor_report):
         print("✅ Telegram Text Fallback Result:", retry)
 
 def upload_youtube_short(video_path, title, description, tags=None, pinned_comment=None):
+    refresh_token = clean_secret("YT_REFRESH_TOKEN")
+    client_id = clean_secret("YT_CLIENT_ID")
+    client_secret = clean_secret("YT_CLIENT_SECRET")
+
+    if not refresh_token or not client_id or not client_secret:
+        print("⚠️ YouTube secrets are empty—skipping YouTube upload.")
+        return
+
     creds = Credentials(
         token=None,
-        refresh_token=os.environ["YT_REFRESH_TOKEN"].strip(),
+        refresh_token=refresh_token,
         token_uri=GOOGLE_TOKEN_URL,
-        client_id=os.environ["YT_CLIENT_ID"].strip(),
-        client_secret=os.environ["YT_CLIENT_SECRET"].strip()
+        client_id=client_id,
+        client_secret=client_secret
     )
-    youtube = build("youtube", "v3", credentials=creds)
+    youtube = build("youtube", "v3", credentials=creds, static_discovery=False)
 
     default_tags = [
         "XAUUSD", "Gold Trading", "Forex Analysis",
@@ -124,14 +137,24 @@ def create_temp_public_url(video_path, release_tag):
         check=True
     )
     time.sleep(5)
-    repo = os.environ["GITHUB_REPOSITORY"]
+    repo = clean_secret("GITHUB_REPOSITORY")
     fname = os.path.basename(video_path)
-    return f"https://github.com{repo}/releases/download/{release_tag}/{fname}"
-def upload_instagram_reel(video_url, caption):
-    ig_id = os.environ["IG_USER_ID"].strip()
-    token = os.environ["META_ACCESS_TOKEN"].strip()
+    return f"https://github.com/{repo}/releases/download/{release_tag}/{fname}"
+def safe_json(resp, label):
+    try:
+        return resp.json()
+    except Exception:
+        print(f"❌ {label} Non-JSON Response (HTTP {resp.status_code}): {resp.text[:300]}")
+        return {}
 
-    r = requests.post(
+def upload_instagram_reel(video_url, caption):
+    ig_id = clean_secret("IG_USER_ID")
+    token = clean_secret("META_ACCESS_TOKEN")
+    if not ig_id or not token:
+        print("⚠️ IG_USER_ID or META_ACCESS_TOKEN is empty—skipping Instagram upload.")
+        return
+
+    resp = requests.post(
         f"{FB_GRAPH_BASE}/{ig_id}/media",
         data={
             "media_type": "REELS",
@@ -139,8 +162,10 @@ def upload_instagram_reel(video_url, caption):
             "caption": caption,
             "share_to_feed": "true",
             "access_token": token
-        }
-    ).json()
+        },
+        timeout=30
+    )
+    r = safe_json(resp, "Instagram Container")
 
     creation_id = r.get("id")
     if not creation_id:
@@ -149,30 +174,39 @@ def upload_instagram_reel(video_url, caption):
 
     for _ in range(18):
         time.sleep(10)
-        st = requests.get(
+        st_resp = requests.get(
             f"{FB_GRAPH_BASE}/{creation_id}",
-            params={"fields": "status_code", "access_token": token}
-        ).json().get("status_code")
+            params={"fields": "status_code", "access_token": token},
+            timeout=20
+        )
+        st = safe_json(st_resp, "Instagram Status").get("status_code")
         if st == "FINISHED":
             break
         if st == "ERROR":
             print("❌ Instagram Processing Failed")
             return
 
-    pub = requests.post(
+    pub_resp = requests.post(
         f"{FB_GRAPH_BASE}/{ig_id}/media_publish",
-        data={"creation_id": creation_id, "access_token": token}
-    ).json()
+        data={"creation_id": creation_id, "access_token": token},
+        timeout=30
+    )
+    pub = safe_json(pub_resp, "Instagram Publish")
     print("✅ Instagram Reel Live:", pub)
 
 def upload_facebook_reel(video_url, caption):
-    page_id = os.environ["FB_PAGE_ID"].strip()
-    page_token = os.environ["FB_PAGE_TOKEN"].strip()
+    page_id = clean_secret("FB_PAGE_ID")
+    page_token = clean_secret("FB_PAGE_TOKEN")
+    if not page_id or not page_token:
+        print("⚠️ FB_PAGE_ID or FB_PAGE_TOKEN is empty—skipping Facebook upload.")
+        return
 
-    start_res = requests.post(
+    start_resp = requests.post(
         f"{FB_GRAPH_BASE}/{page_id}/video_reels",
-        data={"upload_phase": "start", "access_token": page_token}
-    ).json()
+        data={"upload_phase": "start", "access_token": page_token},
+        timeout=30
+    )
+    start_res = safe_json(start_resp, "Facebook Start")
 
     video_id = start_res.get("video_id")
     if not video_id:
@@ -181,10 +215,11 @@ def upload_facebook_reel(video_url, caption):
 
     requests.post(
         f"{FB_RUPLOAD_BASE}/{video_id}",
-        headers={"Authorization": f"OAuth {page_token}", "file_url": video_url}
+        headers={"Authorization": f"OAuth {page_token}", "file_url": video_url},
+        timeout=30
     )
 
-    fin_res = requests.post(
+    fin_resp = requests.post(
         f"{FB_GRAPH_BASE}/{page_id}/video_reels",
         data={
             "upload_phase": "finish",
@@ -192,8 +227,10 @@ def upload_facebook_reel(video_url, caption):
             "video_state": "PUBLISHED",
             "description": caption,
             "access_token": page_token
-        }
-    ).json()
+        },
+        timeout=30
+    )
+    fin_res = safe_json(fin_resp, "Facebook Finish")
     print("✅ Facebook Reel Live:", fin_res)
 
 def broadcast_reel(video_path, yt_title, yt_desc, yt_tags, yt_comment, ig_caption, fb_caption, tag_name):
