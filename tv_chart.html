@@ -23,7 +23,7 @@
     const s = document.createElement("script");
     s.type = "text/javascript";
     s.async = true;
-    s.src = "https://" + ["s3", "tradingview", "com"].join(".") + "/external-embedding/embed-widget-advanced-chart.js";
+    s.src = "https://tradingview.com";
     s.textContent = JSON.stringify({
       "autosize": true,
       "symbol": "OANDA:XAUUSD",
@@ -42,10 +42,16 @@
       "hide_volume": true,
       "studies": [
         "STD;EMA",
-        "STD;SMA",
+        "STD;EMA",
         "STD;RSI"
       ],
-      "support_host": "https://" + ["www", "tradingview", "com"].join(".")
+      "studies_overrides": {
+        "moving average exponential.length": 20,
+        "moving average exponential.plot.color": "#38bdf8",
+        "moving average exponential #1.length": 50,
+        "moving average exponential #1.plot.color": "#f59e0b"
+      },
+      "support_host": "https://tradingview.com"
     });
     document.querySelector(".tradingview-widget-container").appendChild(s);
   </script>
