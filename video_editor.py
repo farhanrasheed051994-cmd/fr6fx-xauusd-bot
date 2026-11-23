@@ -303,7 +303,7 @@ def main():
     render_vertical_reel(
         smc, session_name, date_label, spoken_script,
         "assets/tv_15m.webm", "assets/tv_5m.webm", "assets/tv_15m.png",
-        "assets/fr6fx_xauusd_reel.mp4"
+        "assets/final_reel.mp4"
     )
 
 if __name__ == "__main__":
