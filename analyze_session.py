@@ -83,25 +83,26 @@ async def capture_tradingview_charts():
     thread.start()
 
     base_url = f"http://127.0.0.1:{port}/tv_chart.html"
+    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
 
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(
                 headless=True,
-                args=["--no-sandbox", "--disable-dev-shm-usage"]
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"]
             )
 
             # 1. Record 18 seconds of LIVE moving 15M TradingView chart
             ctx_15 = await browser.new_context(
                 viewport={"width": 940, "height": 800},
                 device_scale_factor=1,
+                user_agent=ua,
                 record_video_dir="assets/raw_vid",
                 record_video_size={"width": 940, "height": 800}
             )
             page_15 = await ctx_15.new_page()
-            await page_15.goto(f"{base_url}?interval=15", wait_until="networkidle", timeout=30000)
-            await page_15.wait_for_selector("iframe", timeout=15000)
-            await page_15.wait_for_timeout(7000)
+            await page_15.goto(f"{base_url}?interval=15", wait_until="domcontentloaded", timeout=30000)
+            await page_15.wait_for_timeout(9000)
             await page_15.screenshot(path="assets/tv_15m.png")
             await page_15.wait_for_timeout(18000)
             vid_15_path = await page_15.video.path()
@@ -112,13 +113,13 @@ async def capture_tradingview_charts():
             ctx_5 = await browser.new_context(
                 viewport={"width": 940, "height": 800},
                 device_scale_factor=1,
+                user_agent=ua,
                 record_video_dir="assets/raw_vid",
                 record_video_size={"width": 940, "height": 800}
             )
             page_5 = await ctx_5.new_page()
-            await page_5.goto(f"{base_url}?interval=5", wait_until="networkidle", timeout=30000)
-            await page_5.wait_for_selector("iframe", timeout=15000)
-            await page_5.wait_for_timeout(7000)
+            await page_5.goto(f"{base_url}?interval=5", wait_until="domcontentloaded", timeout=30000)
+            await page_5.wait_for_timeout(9000)
             await page_5.screenshot(path="assets/tv_5m.png")
             await page_5.wait_for_timeout(18000)
             vid_5_path = await page_5.video.path()
