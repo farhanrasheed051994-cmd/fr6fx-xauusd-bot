@@ -97,5 +97,14 @@
     "strong_low": 3502.9,
     "saved_5m_chart": "assets/history_20261123_0726_5m.png",
     "evaluated": false
+  },
+  {
+    "timestamp": "20261123_0748",
+    "session": "LONDON SESSION",
+    "strong_high": 3636.4,
+    "equilibrium": 3569.65,
+    "strong_low": 3502.9,
+    "saved_5m_chart": "assets/history_20261123_0748_5m.png",
+    "evaluated": false
   }
 ]
