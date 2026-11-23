@@ -83,7 +83,6 @@ def export_telegram_chart(tv_png_path, out_png_path, session_label, smc):
     draw.text((35, 1086), f"ASIA: ${smc['asia_low']}-${smc['asia_high']}   |   LONDON: ${smc['london_low']}-${smc['london_high']}   |   @FR6FX", font=f_stat, fill=(148, 163, 184, 255))
 
     canvas.convert("RGB").save(out_png_path, quality=95)
-
 def build_background_frame(out_png_path, session_label, smc, is_recap=False):
     """Builds the 1080x1920 FR6 FX outer frame with a cutout window at (70, 356, 940x800) for the live video."""
     W, H = 1080, 1920
@@ -131,12 +130,18 @@ def build_background_frame(out_png_path, session_label, smc, is_recap=False):
         draw.rounded_rectangle([(70, 1176), (1010, 1266)], radius=12, fill=(14, 48, 38, 255), outline=(16, 185, 129, 255), width=3)
         draw.text((260, 1206), "PREVIOUS LEVEL PLAYED OUT ✅", font=f_brand, fill=(52, 211, 153, 255))
 
-    tg_link = os.environ.get("TELEGRAM_LINK", "t.me/fr6fx_official").strip()
+    tg_link = (
+        os.environ.get("TELEGRAM_LINK", "t.me/fr6fx_official")
+        .replace("https://", "")
+        .replace("http://", "")
+        .strip()
+    )
     draw.rounded_rectangle([(190, 1500), (890, 1546)], radius=10, fill=(16, 38, 56, 255), outline=(56, 189, 248, 255), width=2)
     draw.text((225, 1511), f"FREE TELEGRAM CHARTS & NEWS: {tg_link}", font=f_tg, fill=(125, 211, 252, 255))
     draw.text((215, 1564), "@FR6FX  •  Educational purposes only. Not financial advice.", font=f_disc, fill=(135, 145, 165, 255))
 
     canvas.convert("RGB").save(out_png_path, quality=95)
+
 async def synthesize_human_voice(spoken_text, raw_mp3, clean_mp3):
     clean_text = re.sub(r"[^\w\s.,!?'-]", " ", str(spoken_text)).strip()
     if not clean_text:
@@ -178,7 +183,6 @@ def sec_to_ass(sec):
     s = int(sec % 60)
     cs = int((sec - int(sec)) * 100)
     return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
-
 def build_pop_captions_and_cues(audio_mp3, out_ass):
     """Builds clean captions AND detects exact voiceover timestamps to draw Supply, EQ & Demand zones live."""
     model = WhisperModel("tiny", device="cpu", compute_type="int8")
@@ -190,6 +194,8 @@ def build_pop_captions_and_cues(audio_mp3, out_ass):
     t_demand = None
 
     for seg in segments:
+        if not seg.words:
+            continue
         for w in seg.words:
             txt = w.word.strip()
             if not txt:
