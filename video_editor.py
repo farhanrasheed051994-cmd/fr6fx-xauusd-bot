@@ -24,14 +24,35 @@ def get_audio_duration(audio_path):
     return float(out)
 
 async def generate_voiceover(text, out_mp3):
-    communicate = edge_tts.Communicate(
-        text,
-        voice="en-US-AndrewMultilingualNeural",
-        rate="+3%",
-        pitch="-2Hz"
+    voices = (
+        "en-US-AndrewNeural",
+        "en-US-GuyNeural",
+        "en-GB-RyanNeural",
+        "en-US-ChristopherNeural"
     )
-    await communicate.save(out_mp3)
-    print(f"✅ Voiceover saved: {out_mp3}")
+    for v in voices:
+        try:
+            communicate = edge_tts.Communicate(text, voice=v, rate="+2%")
+            await communicate.save(out_mp3)
+            if os.path.exists(out_mp3) and os.path.getsize(out_mp3) > 2048:
+                print(f"✅ Voiceover saved using Edge-TTS ({v}): {out_mp3}")
+                return
+        except Exception as e:
+            print(f"⚠️ Edge-TTS {v} failed: {e}")
+            await asyncio.sleep(1)
+
+    print("🔄 Falling back to Google TTS (gTTS) for guaranteed voiceover...")
+    from gtts import gTTS
+    tts = gTTS(text=text, lang="en", tld="com", slow=False)
+    raw_gtts = out_mp3 + ".raw.mp3"
+    tts.save(raw_gtts)
+    cmd = (
+        "ffmpeg", "-y", "-i", raw_gtts,
+        "-filter:a", "atempo=1.12",
+        "-vn", out_mp3
+    )
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(f"✅ Voiceover saved using gTTS fallback: {out_mp3}")
 
 def extract_word_captions(audio_path):
     model = WhisperModel("tiny.en", device="cpu", compute_type="int8")
