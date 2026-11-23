@@ -10,6 +10,7 @@ from google import genai
 from google.genai import types
 from PIL import Image
 from smc_engine import get_smc_market_data, get_usd_fundamental_context
+from seo_engine import build_seo_package
 
 MEMORY_FILE = "predictions.json"
 
@@ -99,6 +100,7 @@ async def capture_tradingview_charts():
             )
             page_15 = await ctx_15.new_page()
             await page_15.goto(f"{base_url}?interval=15", wait_until="networkidle", timeout=30000)
+            await page_15.wait_for_selector("iframe", timeout=15000)
             await page_15.wait_for_timeout(7000)
             await page_15.screenshot(path="assets/tv_15m.png")
             await page_15.wait_for_timeout(18000)
@@ -115,6 +117,7 @@ async def capture_tradingview_charts():
             )
             page_5 = await ctx_5.new_page()
             await page_5.goto(f"{base_url}?interval=5", wait_until="networkidle", timeout=30000)
+            await page_5.wait_for_selector("iframe", timeout=15000)
             await page_5.wait_for_timeout(7000)
             await page_5.screenshot(path="assets/tv_5m.png")
             await page_5.wait_for_timeout(18000)
@@ -153,7 +156,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     You are the head Smart Money Concepts (SMC) mentor for @FR6FX.
     Generate BOTH:
     1. A calm, authoritative 42-second vertical video script ('spoken_script') for YouTube/Instagram/Facebook Reels.
-    2. A deep, mentor-style written analysis ('telegram_report') to post alongside our annotated TradingView chart image in our Telegram channel ({tg_link}).
+    2. A deep, mentor-style written analysis ('telegram_report') to post right underneath our annotated TradingView chart image in our Telegram channel ({tg_link}).
 
     EXACT LIVE TECHNICAL & SESSION DATA:
     - Session: {session_name} ({today_label})
@@ -180,7 +183,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     - Cover the live session price action, liquidity sweep/rejection ({smc['pa_signal']}), Supply & Demand zones, and DXY impact.
     - Include this exact natural CTA near the end: "Join our free Telegram channel in the bio or description for full chart markups and live news alerts, and comment your bias below."
 
-    RULES FOR 'telegram_report' (Mentor-style Telegram post under 950 characters using HTML tags <b> and <i> only, NO asterisks):
+    RULES FOR 'telegram_report' (Mentor-style standalone Telegram post, 1,200–1,800 characters using HTML tags <b> and <i> only, NO asterisks):
     - Act like a patient, disciplined mentor teaching your community how to read the chart.
     - Include sections with clean emojis:
       1. 📊 SESSION CONTEXT & SESSION HIGHS/LOWS (Asia, London, NY, PDH/PDL)
@@ -197,7 +200,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
       "spoken_script": "Full 42-second phonetic voiceover script including free Telegram CTA",
       "youtube_title": "XAUUSD {session_name.title()} Smart Money Analysis ({today_label}) | Gold Supply & Demand #Shorts",
       "social_caption": "Clean Reels caption with Supply/Demand levels, DXY bias, FREE TELEGRAM LINK (https://{tg_link}), Follow @FR6FX CTA, and educational disclaimer",
-      "telegram_report": "Complete mentor-style Telegram chart breakdown under 950 characters using HTML bold/italic tags",
+      "telegram_report": "Complete mentor-style Telegram chart breakdown (1,200–1,800 characters) using HTML bold/italic tags",
       "recap_enabled": false,
       "recap_spoken_script": ""
     }}
@@ -276,6 +279,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
         }
 
     result["smc"] = smc
+    result["seo"] = build_seo_package(smc, news, session_name, result)
 
     history = []
     if os.path.exists(MEMORY_FILE):
@@ -323,7 +327,7 @@ async def main():
 
     await capture_tradingview_charts()
     out = generate_ai_analysis(smc, news, session, played_out)
-    print(f"✅ Phase 3 AI Mentor complete for {session}. Bonus Recap Triggered: {out.get('recap_enabled')}")
+    print(f"✅ Phase 3 AI Mentor + SEO complete for {session}. Bonus Recap Triggered: {out.get('recap_enabled')}")
 
 if __name__ == "__main__":
     asyncio.run(main())
