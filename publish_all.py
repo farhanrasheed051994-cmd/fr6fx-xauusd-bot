@@ -15,7 +15,7 @@ FB_RUPLOAD_BASE = "https://facebook.com"
 TG_API_BASE = "https://telegram.org"
 
 def post_to_telegram_channel(chart_png_path, mentor_report):
-    """Posts the annotated TradingView chart image first, then the full mentor analysis as a separate message."""
+    """Posts the annotated TradingView chart image first, then the full SEO mentor analysis as a separate message."""
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     if not bot_token or not chat_id:
@@ -67,7 +67,7 @@ def post_to_telegram_channel(chart_png_path, mentor_report):
         ).json()
         print("✅ Telegram Text Fallback Result:", retry)
 
-def upload_youtube_short(video_path, title, description):
+def upload_youtube_short(video_path, title, description, tags=None, pinned_comment=None):
     creds = Credentials(
         token=None,
         refresh_token=os.environ["YT_REFRESH_TOKEN"].strip(),
@@ -77,11 +77,16 @@ def upload_youtube_short(video_path, title, description):
     )
     youtube = build("youtube", "v3", credentials=creds)
 
+    default_tags = [
+        "XAUUSD", "Gold Trading", "Forex Analysis",
+        "Smart Money Concepts", "TradingView", "FR6FX", "Shorts"
+    ]
+
     body = {
         "snippet": {
             "title": title[:95],
-            "description": f"{description}\n\n#XAUUSD #GoldTrading #SmartMoneyConcepts #TradingView #FR6FX #Shorts",
-            "tags": ["XAUUSD", "Gold Trading", "Forex Analysis", "Smart Money Concepts", "TradingView", "FR6FX", "Shorts"],
+            "description": description,
+            "tags": (tags or default_tags)[:20],
             "categoryId": "27"
         },
         "status": {
@@ -94,6 +99,23 @@ def upload_youtube_short(video_path, title, description):
     res = youtube.videos().insert(part="snippet,status", body=body, media_body=media).execute()
     vid_id = res["id"]
     print(f"✅ YouTube Short Live: https://youtube.com{vid_id}")
+
+    if pinned_comment:
+        try:
+            youtube.commentThreads().insert(
+                part="snippet",
+                body={
+                    "snippet": {
+                        "videoId": vid_id,
+                        "topLevelComment": {
+                            "snippet": {"textOriginal": pinned_comment}
+                        }
+                    }
+                }
+            ).execute()
+            print("✅ YouTube SEO Pinned/Top Comment Posted")
+        except Exception as ce:
+            print("⚠️ YouTube Comment Skipped (requires youtube.force-ssl scope):", ce)
 
 def create_temp_public_url(video_path, release_tag):
     subprocess.run(["gh", "release", "delete", release_tag, "-y"], stderr=subprocess.DEVNULL)
@@ -114,7 +136,7 @@ def upload_instagram_reel(video_url, caption):
         data={
             "media_type": "REELS",
             "video_url": video_url,
-            "caption": f"{caption}\n\n#XAUUSD #GoldTrading #SmartMoneyConcepts #ForexAnalysis #FR6FX",
+            "caption": caption,
             "share_to_feed": "true",
             "access_token": token
         }
@@ -162,29 +184,28 @@ def upload_facebook_reel(video_url, caption):
         headers={"Authorization": f"OAuth {page_token}", "file_url": video_url}
     )
 
-    fb_text = f"{caption}\n\n👇 Team Bullish 🟢 or Team Bearish 🔴 for this session? Vote in comments!\n#XAUUSD #GoldTrading #SmartMoneyConcepts #FR6FX"
     fin_res = requests.post(
         f"{FB_GRAPH_BASE}/{page_id}/video_reels",
         data={
             "upload_phase": "finish",
             "video_id": video_id,
             "video_state": "PUBLISHED",
-            "description": fb_text,
+            "description": caption,
             "access_token": page_token
         }
     ).json()
     print("✅ Facebook Reel Live:", fin_res)
 
-def broadcast_reel(video_path, yt_title, social_caption, tag_name):
+def broadcast_reel(video_path, yt_title, yt_desc, yt_tags, yt_comment, ig_caption, fb_caption, tag_name):
     try:
-        upload_youtube_short(video_path, yt_title, social_caption)
+        upload_youtube_short(video_path, yt_title, yt_desc, yt_tags, yt_comment)
     except Exception as e:
         print("❌ YouTube Upload Error:", e)
 
     public_mp4_url = create_temp_public_url(video_path, tag_name)
     try:
-        upload_instagram_reel(public_mp4_url, social_caption)
-        upload_facebook_reel(public_mp4_url, social_caption)
+        upload_instagram_reel(public_mp4_url, ig_caption)
+        upload_facebook_reel(public_mp4_url, fb_caption)
     finally:
         subprocess.run(["gh", "release", "delete", tag_name, "-y"], stderr=subprocess.DEVNULL)
 
@@ -194,28 +215,46 @@ def main():
     with open("assets/analysis_output.json") as f:
         data = json.load(f)
 
-    # 1. Post Annotated TradingView Chart Image + Mentor Breakdown to Telegram Channel
-    if os.path.exists("assets/telegram_chart.png") and data.get("telegram_report"):
+    seo = data.get("seo", {})
+
+    # 1. Post Annotated TradingView Chart Image + Full SEO Mentor Breakdown as Separate Posts to Telegram
+    tg_report = seo.get("tg_report_seo") or data.get("telegram_report")
+    if os.path.exists("assets/telegram_chart.png") and tg_report:
         try:
-            post_to_telegram_channel("assets/telegram_chart.png", data["telegram_report"])
+            post_to_telegram_channel("assets/telegram_chart.png", tg_report)
         except Exception as e:
             print("❌ Telegram Post Error:", e)
 
     # 2. If a Bonus "CALLED IT ✅" Proof Reel was created, broadcast it
     if os.path.exists("assets/recap_reel.mp4"):
+        recap_title = f"XAUUSD Target Smashed! How Our Gold Levels Played Out ({data['date_label']}) ✅ #Shorts"
+        recap_caption = (
+            f"Another clean XAUUSD Smart Money level played out to the dollar ✅\n\n"
+            f"Follow @FR6FX and join our free Telegram channel in bio/description for live chart markups!\n\n"
+            f"⚠️ Educational purposes only. Not financial advice.\n\n"
+            f"#XAUUSD #GoldTrading #SmartMoneyConcepts #ForexResults #FR6FX"
+        )
         broadcast_reel(
             "assets/recap_reel.mp4",
-            f"XAUUSD Target Smashed! How Our Gold Levels Played Out ({data['date_label']}) ✅ #Shorts",
-            f"Another clean XAUUSD Smart Money level played out to the dollar ✅\n\nFollow @FR6FX and join our free Telegram channel in bio/description for live chart markups!\n\n⚠️ Educational purposes only. Not financial advice.",
+            recap_title,
+            recap_caption,
+            seo.get("yt_tags"),
+            seo.get("yt_pinned_comment"),
+            recap_caption,
+            recap_caption,
             "fr6fx-temp-recap"
         )
         time.sleep(20)
 
-    # 3. Broadcast the Main Session Analysis Reel
+    # 3. Broadcast the Main Session Analysis Reel with Platform-Specific SEO
     broadcast_reel(
         "assets/final_reel.mp4",
-        data["youtube_title"],
-        data["social_caption"],
+        seo.get("yt_title", data["youtube_title"]),
+        seo.get("yt_description", data["social_caption"]),
+        seo.get("yt_tags"),
+        seo.get("yt_pinned_comment"),
+        seo.get("ig_caption", data["social_caption"]),
+        seo.get("fb_caption", data["social_caption"]),
         "fr6fx-temp-main"
     )
 
