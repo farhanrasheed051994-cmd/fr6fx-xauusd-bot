@@ -2,10 +2,14 @@ import os
 import json
 import time
 import asyncio
-import threading
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import subprocess
+import numpy as np
+import pandas as pd
+import yfinance as yf
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from datetime import datetime, timezone
-from playwright.async_api import async_playwright
 from google import genai
 from google.genai import types
 from PIL import Image
@@ -34,7 +38,6 @@ def check_previous_call_played_out(smc):
 
     prev = history[-1]
 
-    # Require at least 2 hours elapsed before evaluating a setup
     try:
         prev_dt = datetime.strptime(prev["timestamp"], "%Y%m%d_%H%M").replace(tzinfo=timezone.utc)
         hours_elapsed = (datetime.now(timezone.utc) - prev_dt).total_seconds() / 3600.0
@@ -73,62 +76,123 @@ def check_previous_call_played_out(smc):
 
     return outcome
 
-async def capture_tradingview_charts():
+def fetch_tf_candles(interval, live_price):
+    """Fetches 5m or 15m Gold candles and calibrates them to live OANDA:XAUUSD spot price."""
+    period = "2d" if interval == "5m" else "5d"
+    for ticker in ["GC=F", "XAUUSD=X"]:
+        try:
+            df = yf.download(ticker, period=period, interval=interval, progress=False)
+            if df is not None and not df.empty and len(df) >= 30:
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                df = df.tail(75).copy()
+                spread = float(df["Close"].iloc[-1]) - float(live_price)
+                for c in ["Open", "High", "Low", "Close"]:
+                    df[c] = df[c] - spread
+                df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
+                df["EMA50"] = df["Close"].ewm(span=50, adjust=False).mean()
+                return df
+        except Exception as e:
+            print(f"⚠️ {ticker} ({interval}) fetch warning: {e}")
+    raise RuntimeError(f"Could not fetch {interval} candles for chart rendering.")
+
+def render_pro_chart_image(df, tf_label, smc, out_png_path):
+    """Renders a crisp TradingView-style dark institutional candlestick chart (940x800)."""
+    fig, ax = plt.subplots(figsize=(9.4, 8.0), dpi=100)
+    bg_color = "#0d121d"
+    fig.patch.set_facecolor(bg_color)
+    ax.set_facecolor(bg_color)
+
+    opens = df["Open"].values
+    highs = df["High"].values
+    lows = df["Low"].values
+    closes = df["Close"].values
+    ema20 = df["EMA20"].values
+    ema50 = df["EMA50"].values
+    x = np.arange(len(df))
+
+    for i in range(len(df)):
+        is_up = closes[i] >= opens[i]
+        color = "#089981" if is_up else "#f23645"
+        ax.plot([x[i], x[i]], [lows[i], highs[i]], color=color, linewidth=1.2, zorder=2)
+        body_bottom = min(opens[i], closes[i])
+        body_height = max(abs(closes[i] - opens[i]), 0.15)
+        ax.bar(
+            x[i], body_height, bottom=body_bottom, width=0.62,
+            color=color, edgecolor=color, linewidth=0.8, zorder=3
+        )
+
+    ax.plot(x, ema20, color="#2962ff", linewidth=1.6, label="EMA 20", zorder=4)
+    ax.plot(x, ema50, color="#ff9800", linewidth=1.6, label="EMA 50", zorder=4)
+
+    live_p = float(smc["live_price"])
+    ax.axhline(live_p, color="#00e5ff", linestyle="--", linewidth=1.1, alpha=0.85, zorder=5)
+    ax.text(
+        len(df) + 0.6, live_p, f" ${live_p:.2f} ",
+        color="#0d121d", fontsize=9.5, fontweight="bold", va="center",
+        bbox=dict(boxstyle="round,pad=0.25", facecolor="#00e5ff", edgecolor="none")
+    )
+
+    ax.text(
+        0.02, 0.96, f"OANDA:XAUUSD • {tf_label} • FR6 FX INSTITUTIONAL FEED",
+        transform=ax.transAxes, color="#94a3b8", fontsize=10, fontweight="bold", va="top"
+    )
+    ax.text(
+        0.5, 0.5, "FR6 FX\nXAUUSD",
+        transform=ax.transAxes, color="#ffffff", alpha=0.04,
+        fontsize=46, fontweight="bold", ha="center", va="center"
+    )
+
+    ax.yaxis.tick_right()
+    ax.yaxis.set_label_position("right")
+    ax.tick_params(axis="y", colors="#cbd5e1", labelsize=9.5)
+    ax.tick_params(axis="x", colors="#64748b", labelsize=8.5)
+    ax.grid(True, color="#1e293b", linestyle="-", linewidth=0.6, alpha=0.8)
+
+    tick_step = max(len(df) // 6, 1)
+    tick_idxs = list(range(0, len(df), tick_step))
+    tick_labels = [df.index[i].strftime("%H:%M") for i in tick_idxs]
+    ax.set_xticks(tick_idxs)
+    ax.set_xticklabels(tick_labels)
+
+    for spine in ["top", "left"]:
+        ax.spines[spine].set_visible(False)
+    for spine in ["bottom", "right"]:
+        ax.spines[spine].set_color("#263244")
+
+    y_min = min(lows.min(), float(smc["strong_low"])) - 3.0
+    y_max = max(highs.max(), float(smc["strong_high"])) + 3.0
+    ax.set_ylim(y_min, y_max)
+    ax.set_xlim(-1, len(df) + 6)
+
+    leg = ax.legend(loc="upper right", frameon=True, facecolor="#131a29", edgecolor="#263244", fontsize=8.5)
+    for text in leg.get_texts():
+        text.set_color("#e2e8f0")
+
+    plt.tight_layout(pad=0.6)
+    plt.savefig(out_png_path, facecolor=bg_color, dpi=100)
+    plt.close(fig)
+
+def build_live_pan_clip(png_path, out_webm_path):
+    """Creates an 18-second smooth live-zooming chart video clip (940x800) from the rendered chart."""
+    cmd = [
+        "ffmpeg", "-y", "-loop", "1", "-i", png_path,
+        "-vf", "scale=1080:920,zoompan=z='min(zoom+0.0005,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=450:s=940x800:fps=25",
+        "-t", "18", "-c:v", "libvpx-vp9", "-b:v", "1500k", "-an", out_webm_path
+    ]
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+async def capture_tradingview_charts(smc):
     os.makedirs("assets", exist_ok=True)
-    os.makedirs("assets/raw_vid", exist_ok=True)
+    df_15 = fetch_tf_candles("15m", smc["live_price"])
+    df_5 = fetch_tf_candles("5m", smc["live_price"])
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), SimpleHTTPRequestHandler)
-    _, port = server.server_address
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    render_pro_chart_image(df_15, "15M", smc, "assets/tv_15m.png")
+    render_pro_chart_image(df_5, "5M", smc, "assets/tv_5m.png")
 
-    base_url = f"http://127.0.0.1:{port}/tv_chart.html"
-    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
-
-    try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"]
-            )
-
-            # 1. Record 18 seconds of LIVE moving 15M TradingView chart
-            ctx_15 = await browser.new_context(
-                viewport={"width": 940, "height": 800},
-                device_scale_factor=1,
-                user_agent=ua,
-                record_video_dir="assets/raw_vid",
-                record_video_size={"width": 940, "height": 800}
-            )
-            page_15 = await ctx_15.new_page()
-            await page_15.goto(f"{base_url}?interval=15", wait_until="domcontentloaded", timeout=30000)
-            await page_15.wait_for_timeout(9000)
-            await page_15.screenshot(path="assets/tv_15m.png")
-            await page_15.wait_for_timeout(18000)
-            vid_15_path = await page_15.video.path()
-            await ctx_15.close()
-            os.replace(vid_15_path, "assets/tv_15m.webm")
-
-            # 2. Record 18 seconds of LIVE moving 5M TradingView chart
-            ctx_5 = await browser.new_context(
-                viewport={"width": 940, "height": 800},
-                device_scale_factor=1,
-                user_agent=ua,
-                record_video_dir="assets/raw_vid",
-                record_video_size={"width": 940, "height": 800}
-            )
-            page_5 = await ctx_5.new_page()
-            await page_5.goto(f"{base_url}?interval=5", wait_until="domcontentloaded", timeout=30000)
-            await page_5.wait_for_timeout(9000)
-            await page_5.screenshot(path="assets/tv_5m.png")
-            await page_5.wait_for_timeout(18000)
-            vid_5_path = await page_5.video.path()
-            await ctx_5.close()
-            os.replace(vid_5_path, "assets/tv_5m.webm")
-
-            await browser.close()
-    finally:
-        server.shutdown()
+    build_live_pan_clip("assets/tv_15m.png", "assets/tv_15m.webm")
+    build_live_pan_clip("assets/tv_5m.png", "assets/tv_5m.webm")
+    print("✅ Crisp 15M & 5M candlestick charts and live clips rendered.")
 def generate_ai_analysis(smc, news, session_name, played_out):
     client = genai.Client(
         api_key=os.environ["GEMINI_API_KEY"],
@@ -179,7 +243,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     {news_block}
 
     RULES FOR 'spoken_script' (Reels Voiceover, ~95 words):
-    - Write numbers cleanly without awkward decimals (e.g. "thirty-five thirty-eight" instead of "$3538.18", and "one-oh-three point eight" for DXY).
+    - Write numbers cleanly without decimals (e.g. "thirty-six twenty-five" instead of "$3625.30", and "one-oh-four" for DXY).
     - ALWAYS spell out "fair value gap" instead of "FVG" so text-to-speech pronounces every word clearly.
     - Cover the live session price action, liquidity sweep/rejection ({smc['pa_signal']}), Supply & Demand zones, and DXY impact.
     - Include this exact natural CTA near the end: "Join our free Telegram channel in the bio or description for full chart markups and live news alerts, and comment your bias below."
@@ -233,6 +297,8 @@ def generate_ai_analysis(smc, news, session_name, played_out):
         result = json.loads(response.text)
     else:
         print("🔄 Gemini busy—using built-in Mentor fallback analysis...")
+        dxy_spoken = f"{smc['dxy_now']:.1f}".replace(".0", "")
+        dxy_dir = "pushing higher" if "Bullish" in smc["dxy_bias"] else "pulling back"
         result = {
             "date_label": today_label,
             "session": session_name,
@@ -240,7 +306,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
                 f"Gold is trading near {int(smc['live_price'])} heading into the {session_name} with a {smc['bias_label'].lower()}. "
                 f"Looking at session liquidity, {smc['pa_signal'].replace('FVG', 'fair value gap')}. "
                 f"Institutional supply sits between {int(smc['retest_res'])} and {int(smc['strong_high'])}, while demand support rests near {int(smc['strong_low'])}. "
-                f"With DXY {smc['dxy_bias']}, wait for a clean sweep and retest before confirming entries. "
+                f"With the dollar index {dxy_dir} around {dxy_spoken}, wait for a clean sweep and retest before confirming entries. "
                 f"Join our free Telegram channel in the bio or description for full chart markups and live news alerts, and comment your bias below."
             ),
             "youtube_title": f"XAUUSD {session_name.title()} Smart Money Analysis ({today_label}) | Gold Supply & Demand #Shorts",
@@ -291,7 +357,6 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     saved_5m = f"assets/history_{ts}_5m.png"
     img_5m.save(saved_5m)
 
-    # Avoid logging duplicate levels if strong_high & strong_low haven't changed
     is_duplicate = (
         history
         and not history[-1].get("evaluated")
@@ -326,7 +391,7 @@ async def main():
     news = get_usd_fundamental_context()
     played_out = check_previous_call_played_out(smc)
 
-    await capture_tradingview_charts()
+    await capture_tradingview_charts(smc)
     out = generate_ai_analysis(smc, news, session, played_out)
     print(f"✅ Phase 3 AI Mentor + SEO complete for {session}. Bonus Recap Triggered: {out.get('recap_enabled')}")
 
