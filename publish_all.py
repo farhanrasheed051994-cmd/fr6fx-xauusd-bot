@@ -15,39 +15,57 @@ FB_RUPLOAD_BASE = "https://facebook.com"
 TG_API_BASE = "https://telegram.org"
 
 def post_to_telegram_channel(chart_png_path, mentor_report):
-    """Posts the high-res annotated TradingView chart image + mentor analysis to Telegram."""
+    """Posts the annotated TradingView chart image first, then the full mentor analysis as a separate message."""
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     if not bot_token or not chat_id:
         print("⚠️ Telegram secrets not set—skipping Telegram post.")
         return
 
-    url = f"{TG_API_BASE}{bot_token}/sendPhoto"
+    # 1. Send Annotated Chart Image
+    photo_url = f"{TG_API_BASE}{bot_token}/sendPhoto"
     with open(chart_png_path, "rb") as img_file:
-        resp = requests.post(
-            url,
-            data={
-                "chat_id": chat_id,
-                "caption": mentor_report[:1020],
-                "parse_mode": "HTML"
-            },
+        photo_resp = requests.post(
+            photo_url,
+            data={"chat_id": chat_id},
             files={"photo": img_file},
             timeout=20
         ).json()
 
-    if resp.get("ok"):
-        print(f"✅ Telegram Chart & Mentor Analysis Posted to {chat_id}")
+    if photo_resp.get("ok"):
+        print(f"✅ Telegram Chart Image Posted to {chat_id}")
     else:
-        # Retry without HTML tags if any unclosed tag tripped Telegram's parser
-        plain_caption = re.sub(r"<[^>]+>", "", mentor_report)[:1020]
-        with open(chart_png_path, "rb") as img_file:
-            retry = requests.post(
-                url,
-                data={"chat_id": chat_id, "caption": plain_caption},
-                files={"photo": img_file},
-                timeout=20
-            ).json()
-        print("✅ Telegram Post Result:", retry)
+        print("❌ Telegram Chart Image Error:", photo_resp)
+
+    time.sleep(1.5)
+
+    # 2. Send Full Mentor Description as Separate Message (up to 4096 chars)
+    msg_url = f"{TG_API_BASE}{bot_token}/sendMessage"
+    msg_resp = requests.post(
+        msg_url,
+        data={
+            "chat_id": chat_id,
+            "text": mentor_report[:4090],
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True
+        },
+        timeout=20
+    ).json()
+
+    if msg_resp.get("ok"):
+        print(f"✅ Telegram Mentor Analysis Posted to {chat_id}")
+    else:
+        plain_text = re.sub(r"<[^>]+>", "", mentor_report)[:4090]
+        retry = requests.post(
+            msg_url,
+            data={
+                "chat_id": chat_id,
+                "text": plain_text,
+                "disable_web_page_preview": True
+            },
+            timeout=20
+        ).json()
+        print("✅ Telegram Text Fallback Result:", retry)
 
 def upload_youtube_short(video_path, title, description):
     creds = Credentials(
