@@ -14,17 +14,24 @@ FB_GRAPH_BASE = "https://facebook.com"
 FB_RUPLOAD_BASE = "https://facebook.com"
 TG_API_BASE = "https://telegram.org"
 
-def clean_secret(name):
-    """Strips accidental newlines, spaces, or quotes from GitHub Secrets."""
-    val = os.environ.get(name, "")
-    return re.sub(r"[\r\n\t\"']", "", val).strip()
+def get_secret(*names):
+    """Checks multiple possible env var names and strips accidental newlines/quotes/prefixes."""
+    for name in names:
+        val = os.environ.get(name, "")
+        val = re.sub(r"[\r\n\t\"']", "", val).strip()
+        if val:
+            if "TELEGRAM" in name and "TOKEN" in name:
+                val = re.sub(r"^https?://api\.telegram\.org/bot", "", val)
+                val = re.sub(r"^bot(?=\d+:)", "", val)
+            return val
+    return ""
 
 def post_to_telegram_channel(chart_png_path, mentor_report):
     """Posts the annotated TradingView chart image first, then the full SEO mentor analysis as a separate message."""
-    bot_token = clean_secret("TELEGRAM_BOT_TOKEN")
-    chat_id = clean_secret("TELEGRAM_CHAT_ID")
+    bot_token = get_secret("TELEGRAM_BOT_TOKEN", "TELEGRAM_TOKEN", "BOT_TOKEN")
+    chat_id = get_secret("TELEGRAM_CHAT_ID", "TELEGRAM_CHANNEL_ID", "CHAT_ID")
     if not bot_token or not chat_id:
-        print("⚠️ TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is empty—skipping Telegram post.")
+        print(f"⚠️ Telegram secrets missing (token_len={len(bot_token)}, chat_id_len={len(chat_id)})—skipping Telegram post.")
         return
 
     # 1. Send Annotated Chart Image
@@ -73,12 +80,12 @@ def post_to_telegram_channel(chart_png_path, mentor_report):
         print("✅ Telegram Text Fallback Result:", retry)
 
 def upload_youtube_short(video_path, title, description, tags=None, pinned_comment=None):
-    refresh_token = clean_secret("YT_REFRESH_TOKEN")
-    client_id = clean_secret("YT_CLIENT_ID")
-    client_secret = clean_secret("YT_CLIENT_SECRET")
+    refresh_token = get_secret("YT_REFRESH_TOKEN", "YOUTUBE_REFRESH_TOKEN")
+    client_id = get_secret("YT_CLIENT_ID", "YOUTUBE_CLIENT_ID")
+    client_secret = get_secret("YT_CLIENT_SECRET", "YOUTUBE_CLIENT_SECRET")
 
     if not refresh_token or not client_id or not client_secret:
-        print("⚠️ YouTube secrets are empty—skipping YouTube upload.")
+        print(f"⚠️ YouTube secrets missing (id={len(client_id)}, sec={len(client_secret)}, ref={len(refresh_token)})—skipping YouTube upload.")
         return
 
     creds = Credentials(
@@ -88,7 +95,7 @@ def upload_youtube_short(video_path, title, description, tags=None, pinned_comme
         client_id=client_id,
         client_secret=client_secret
     )
-    youtube = build("youtube", "v3", credentials=creds, static_discovery=False)
+    youtube = build("youtube", "v3", credentials=creds)
 
     default_tags = [
         "XAUUSD", "Gold Trading", "Forex Analysis",
@@ -137,9 +144,9 @@ def create_temp_public_url(video_path, release_tag):
         check=True
     )
     time.sleep(5)
-    repo = clean_secret("GITHUB_REPOSITORY")
+    repo = get_secret("GITHUB_REPOSITORY")
     fname = os.path.basename(video_path)
-    return f"https://github.com/{repo}/releases/download/{release_tag}/{fname}"
+    return f"https://github.com{repo}/releases/download/{release_tag}/{fname}"
 def safe_json(resp, label):
     try:
         return resp.json()
@@ -148,10 +155,10 @@ def safe_json(resp, label):
         return {}
 
 def upload_instagram_reel(video_url, caption):
-    ig_id = clean_secret("IG_USER_ID")
-    token = clean_secret("META_ACCESS_TOKEN")
+    ig_id = get_secret("IG_USER_ID", "IG_ACCOUNT_ID", "INSTAGRAM_USER_ID", "INSTAGRAM_ACCOUNT_ID")
+    token = get_secret("META_ACCESS_TOKEN", "IG_ACCESS_TOKEN", "INSTAGRAM_ACCESS_TOKEN", "FB_PAGE_TOKEN", "FB_ACCESS_TOKEN")
     if not ig_id or not token:
-        print("⚠️ IG_USER_ID or META_ACCESS_TOKEN is empty—skipping Instagram upload.")
+        print(f"⚠️ Instagram secrets missing (ig_id={len(ig_id)}, token={len(token)})—skipping Instagram upload.")
         return
 
     resp = requests.post(
@@ -195,10 +202,10 @@ def upload_instagram_reel(video_url, caption):
     print("✅ Instagram Reel Live:", pub)
 
 def upload_facebook_reel(video_url, caption):
-    page_id = clean_secret("FB_PAGE_ID")
-    page_token = clean_secret("FB_PAGE_TOKEN")
+    page_id = get_secret("FB_PAGE_ID", "FACEBOOK_PAGE_ID")
+    page_token = get_secret("FB_PAGE_TOKEN", "FB_ACCESS_TOKEN", "FACEBOOK_PAGE_TOKEN", "META_ACCESS_TOKEN")
     if not page_id or not page_token:
-        print("⚠️ FB_PAGE_ID or FB_PAGE_TOKEN is empty—skipping Facebook upload.")
+        print(f"⚠️ Facebook secrets missing (page_id={len(page_id)}, token={len(page_token)})—skipping Facebook upload.")
         return
 
     start_resp = requests.post(
