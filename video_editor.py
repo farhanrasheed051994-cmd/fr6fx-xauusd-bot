@@ -5,324 +5,358 @@ import asyncio
 import subprocess
 import edge_tts
 from gtts import gTTS
-from PIL import Image, ImageDraw, ImageFont
 from faster_whisper import WhisperModel
+from PIL import Image, ImageDraw, ImageFont
 
+W, H = 1080, 1920
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
-def calc_zone_y(smc):
-    """Calculates Y positions strictly inside the main candlestick pane (above RSI)."""
-    sh = float(smc["strong_high"])
-    sl = float(smc["strong_low"])
-    eq = float(smc["equilibrium"])
-    span = max(sh - sl, 1.0)
+def load_font(path, size):
+    try:
+        return ImageFont.truetype(path, size)
+    except Exception:
+        return ImageFont.load_default()
 
-    def price_to_y(p):
-        ratio = (sh - p) / span
-        return int(max(55, min(480, 60 + ratio * 415)))
+async def generate_voiceover(text, out_mp3):
+    clean_text = re.sub(r"\s+", " ", text).strip()
+    try:
+        communicate = edge_tts.Communicate(
+            clean_text,
+            voice="en-US-ChristopherNeural",
+            rate="-4%",
+            pitch="-2Hz"
+        )
+        await communicate.save(out_mp3)
+        if os.path.exists(out_mp3) and os.path.getsize(out_mp3) > 1000:
+            print("✅ Natural Mentor Voiceover generated via Edge-TTS")
+            return
+    except Exception as e:
+        print(f"⚠️ Edge-TTS fallback triggered: {e}")
 
-    return price_to_y(sh), price_to_y(eq), price_to_y(sl)
+    tts = gTTS(text=clean_text, lang="en", slow=False)
+    tts.save(out_mp3)
+    print("✅ Voiceover generated via gTTS fallback")
 
-def create_zone_layer_pngs(smc):
-    """Generates individual 940x800 transparent RGBA overlays for animated live drawing."""
-    W, H = 940, 800
-    plot_right = W - 115
-    f_zone = ImageFont.truetype(FONT_BOLD, 18)
-    y_res, y_eq, y_sup = calc_zone_y(smc)
-
-    # 1. Red Supply Zone PNG
-    img_sup = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    d1 = ImageDraw.Draw(img_sup)
-    d1.rectangle([(10, y_res), (plot_right, y_res + 44)], fill=(239, 68, 68, 56))
-    d1.line([(10, y_res), (plot_right, y_res)], fill=(239, 68, 68, 235), width=2)
-    d1.rounded_rectangle([(18, y_res + 6), (315, y_res + 36)], radius=6, fill=(185, 28, 28, 235))
-    d1.text((28, y_res + 11), f"SUPPLY CAP  ${smc['strong_high']}", font=f_zone, fill=(255, 255, 255, 255))
-    img_sup.save("assets/layer_supply.png")
-
-    # 2. Gold 50% Equilibrium Line PNG
-    img_eq = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    d2 = ImageDraw.Draw(img_eq)
-    for x in range(10, plot_right, 22):
-        d2.line([(x, y_eq), (min(x + 12, plot_right), y_eq)], fill=(245, 180, 35, 240), width=3)
-    d2.rounded_rectangle([(18, y_eq - 36), (315, y_eq - 6)], radius=6, fill=(161, 98, 7, 240))
-    d2.text((28, y_eq - 31), f"50% EQ  ${smc['equilibrium']}", font=f_zone, fill=(255, 255, 255, 255))
-    img_eq.save("assets/layer_eq.png")
-
-    # 3. Blue Demand Zone PNG
-    img_dem = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    d3 = ImageDraw.Draw(img_dem)
-    d3.rectangle([(10, y_sup - 44), (plot_right, y_sup)], fill=(59, 130, 246, 60))
-    d3.line([(10, y_sup), (plot_right, y_sup)], fill=(59, 130, 246, 235), width=2)
-    d3.rounded_rectangle([(18, y_sup - 37), (320, y_sup - 7)], radius=6, fill=(29, 78, 216, 235))
-    d3.text((28, y_sup - 32), f"DEMAND FLOOR  ${smc['strong_low']}", font=f_zone, fill=(255, 255, 255, 255))
-    img_dem.save("assets/layer_demand.png")
-
-def export_telegram_chart(tv_png_path, out_png_path, session_label, smc):
-    """Creates the high-res annotated chart graphic for the FR6 FX Telegram Channel."""
-    base = Image.open(tv_png_path).convert("RGBA").resize((940, 800), Image.Resampling.LANCZOS)
-    for layer_path in ("assets/layer_supply.png", "assets/layer_eq.png", "assets/layer_demand.png"):
-        base = Image.alpha_composite(base, Image.open(layer_path).convert("RGBA"))
-    annotated = base.resize((1080, 920), Image.Resampling.LANCZOS)
-
-    canvas = Image.new("RGBA", (1080, 1140), (10, 14, 22, 255))
-    draw = ImageDraw.Draw(canvas)
-
-    f_head = ImageFont.truetype(FONT_BOLD, 28)
-    f_sub = ImageFont.truetype(FONT_BOLD, 21)
-    f_stat = ImageFont.truetype(FONT_BOLD, 20)
-
-    draw.rectangle([(0, 0), (1080, 110)], fill=(16, 22, 34, 255))
-    draw.text((35, 22), f"FR6 FX  •  XAUUSD {session_label} MARKUP", font=f_head, fill=(245, 180, 35, 255))
-    draw.text((35, 64), f"SPOT: ${smc['live_price']}  |  {smc['bias_label']}  |  DXY: {smc['dxy_now']}  |  PDH: ${smc['pdh']} / PDL: ${smc['pdl']}", font=f_sub, fill=(215, 225, 240, 255))
-
-    canvas.paste(annotated, (0, 110))
-
-    draw.rectangle([(0, 1030), (1080, 1140)], fill=(16, 22, 34, 255))
-    draw.text((35, 1048), f"SUPPLY: {smc['supply_zone']}   |   50% EQ: ${smc['equilibrium']}   |   DEMAND: {smc['demand_zone']}", font=f_stat, fill=(255, 255, 255, 255))
-    draw.text((35, 1086), f"ASIA: ${smc['asia_low']}-${smc['asia_high']}   |   LONDON: ${smc['london_low']}-${smc['london_high']}   |   @FR6FX", font=f_stat, fill=(148, 163, 184, 255))
-
-    canvas.convert("RGB").save(out_png_path, quality=95)
-def build_background_frame(out_png_path, session_label, smc, is_recap=False):
-    """Builds the 1080x1920 FR6 FX outer frame with a cutout window at (70, 356, 940x800) for the live video."""
-    W, H = 1080, 1920
-    canvas = Image.new("RGBA", (W, H), (9, 12, 18, 255))
-    draw = ImageDraw.Draw(canvas)
-
-    for x in range(0, W, 90):
-        draw.line([(x, 0), (x, H)], fill=(18, 23, 34, 255), width=1)
-    for y in range(0, H, 90):
-        draw.line([(0, y), (W, y)], fill=(18, 23, 34, 255), width=1)
-
-    f_brand = ImageFont.truetype(FONT_BOLD, 27)
-    f_sub = ImageFont.truetype(FONT_BOLD, 22)
-    f_pill_lbl = ImageFont.truetype(FONT_BOLD, 18)
-    f_pill_val = ImageFont.truetype(FONT_BOLD, 25)
-    f_tg = ImageFont.truetype(FONT_BOLD, 21)
-    f_disc = ImageFont.truetype(FONT_REG, 19)
-
-    accent = (16, 185, 129, 255) if is_recap else (245, 180, 35, 255)
-    draw.rounded_rectangle([(70, 215), (1010, 278)], radius=12, fill=(18, 24, 36, 255), outline=accent, width=2)
-    draw.ellipse([(92, 237), (110, 255)], fill=(239, 68, 68, 255))
-    draw.text((124, 231), f"FR6 FX  •  {session_label}  [LIVE CHART]", font=f_brand, fill=accent)
-
-    bias_lbl = smc.get("bias_label", "MARKET OUTLOOK")
-    bias_col = (52, 211, 153, 255) if "BULLISH" in bias_lbl else ((248, 113, 113, 255) if "BEARISH" in bias_lbl else (252, 211, 77, 255))
-    draw.rounded_rectangle([(70, 294), (1010, 340)], radius=8, fill=(20, 27, 40, 255))
-    draw.text((86, 304), f"{bias_lbl}  |  DXY: {smc.get('dxy_now', '')}  |  GOLD: ${smc['live_price']}", font=f_sub, fill=bias_col)
-
-    # Border around live chart video slot (70, 356, 940x800)
-    draw.rounded_rectangle([(67, 353), (1013, 1159)], radius=18, outline=(45, 55, 75, 255), width=3)
-
-    if not is_recap:
-        draw.rounded_rectangle([(70, 1176), (370, 1266)], radius=12, fill=(52, 18, 26, 255), outline=(239, 68, 68, 255), width=2)
-        draw.text((88, 1188), "SUPPLY CAP", font=f_pill_lbl, fill=(248, 113, 113, 255))
-        draw.text((88, 1218), f"${smc['strong_high']}", font=f_pill_val, fill=(255, 255, 255, 255))
-
-        draw.rounded_rectangle([(390, 1176), (690, 1266)], radius=12, fill=(48, 38, 16, 255), outline=(245, 180, 35, 255), width=2)
-        draw.text((408, 1188), "50% EQUILIBRIUM", font=f_pill_lbl, fill=(252, 211, 77, 255))
-        draw.text((408, 1218), f"${smc['equilibrium']}", font=f_pill_val, fill=(255, 255, 255, 255))
-
-        draw.rounded_rectangle([(710, 1176), (1010, 1266)], radius=12, fill=(16, 36, 58, 255), outline=(59, 130, 246, 255), width=2)
-        draw.text((728, 1188), "DEMAND FLOOR", font=f_pill_lbl, fill=(96, 165, 250, 255))
-        draw.text((728, 1218), f"${smc['strong_low']}", font=f_pill_val, fill=(255, 255, 255, 255))
-    else:
-        draw.rounded_rectangle([(70, 1176), (1010, 1266)], radius=12, fill=(14, 48, 38, 255), outline=(16, 185, 129, 255), width=3)
-        draw.text((260, 1206), "PREVIOUS LEVEL PLAYED OUT ✅", font=f_brand, fill=(52, 211, 153, 255))
-
-    tg_link = (
-        os.environ.get("TELEGRAM_LINK", "t.me/fr6fx_official")
-        .replace("https://", "")
-        .replace("http://", "")
-        .strip()
-    )
-    draw.rounded_rectangle([(190, 1500), (890, 1546)], radius=10, fill=(16, 38, 56, 255), outline=(56, 189, 248, 255), width=2)
-    draw.text((225, 1511), f"FREE TELEGRAM CHARTS & NEWS: {tg_link}", font=f_tg, fill=(125, 211, 252, 255))
-    draw.text((215, 1564), "@FR6FX  •  Educational purposes only. Not financial advice.", font=f_disc, fill=(135, 145, 165, 255))
-
-    canvas.convert("RGB").save(out_png_path, quality=95)
-
-async def synthesize_human_voice(spoken_text, raw_mp3, clean_mp3):
-    clean_text = re.sub(r"[^\w\s.,!?'-]", " ", str(spoken_text)).strip()
-    if not clean_text:
-        clean_text = "Gold live session analysis is now ready. Check the key levels on screen."
-
-    voices = ["en-US-AndrewNeural", "en-US-GuyNeural", "en-GB-RyanNeural"]
-    edge_success = False
-
-    for v in voices:
-        try:
-            tts = edge_tts.Communicate(clean_text, voice=v, rate="+2%")
-            await tts.save(raw_mp3)
-            if os.path.exists(raw_mp3) and os.path.getsize(raw_mp3) > 1000:
-                edge_success = True
-                break
-        except Exception as e:
-            print(f"⚠️ Edge-TTS {v} skipped: {e}")
-
-    if not edge_success:
-        print("🔄 Switching to reliable gTTS fallback...")
-        gtts_obj = gTTS(text=clean_text, lang="en", tld="com", slow=False)
-        gtts_obj.save(raw_mp3)
-
-    tempo_filter = (
-        "silenceremove=stop_periods=-1:stop_duration=0.25:stop_threshold=-40dB"
-        if edge_success
-        else "atempo=1.03,silenceremove=stop_periods=-1:stop_duration=0.25:stop_threshold=-40dB"
-    )
-
-    subprocess.run([
-        "ffmpeg", "-y", "-i", raw_mp3,
-        "-af", tempo_filter,
-        clean_mp3
-    ], check=True)
-
-def sec_to_ass(sec):
-    h = int(sec // 3600)
-    m = int((sec % 3600) // 60)
-    s = int(sec % 60)
-    cs = int((sec - int(sec)) * 100)
-    return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
-def build_pop_captions_and_cues(audio_mp3, out_ass):
-    """Builds clean captions AND detects exact voiceover timestamps to draw Supply, EQ & Demand zones live."""
-    model = WhisperModel("tiny", device="cpu", compute_type="int8")
-    segments, _ = model.transcribe(audio_mp3, word_timestamps=True)
-
-    raw_words = []
-    t_supply = None
-    t_eq = None
-    t_demand = None
-
+def extract_word_captions(audio_path):
+    """Uses Whisper to get exact word timestamps and auto-corrects trading terms like 'buy-side'."""
+    model = WhisperModel("tiny.en", device="cpu", compute_type="int8")
+    segments, _ = model.transcribe(audio_path, word_timestamps=True)
+    words = []
     for seg in segments:
-        if not seg.words:
-            continue
         for w in seg.words:
-            txt = w.word.strip()
-            if not txt:
-                continue
-            low = txt.lower()
-            if t_supply is None and any(k in low for k in ("supply", "resistance", "cap")):
-                t_supply = round(max(w.start - 0.15, 1.5), 2)
-            if t_eq is None and any(k in low for k in ("equilibrium", "fifty", "pivot", "mid")):
-                t_eq = round(max(w.start - 0.15, 3.0), 2)
-            if t_demand is None and any(k in low for k in ("demand", "support", "floor")):
-                t_demand = round(max(w.start - 0.15, 4.5), 2)
+            txt = w.word.strip().upper()
+            txt = txt.replace("BICIDE", "BUY-SIDE").replace("BY SIDE", "BUY-SIDE").replace("CELL SIDE", "SELL-SIDE")
+            if txt:
+                words.append({"word": txt, "start": w.start, "end": w.end})
+    return words
 
-            if raw_words and (txt.startswith(".") or txt.startswith(",")):
-                raw_words[-1]["end"] = w.end
-                raw_words[-1]["text"] += txt
-            else:
-                raw_words.append({"start": w.start, "end": w.end, "text": txt})
+def get_audio_duration(audio_path):
+    cmd = [
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", audio_path
+    ]
+    res = subprocess.check_output(cmd).decode().strip()
+    return max(float(res), 15.0)
 
-    t_supply = t_supply if t_supply is not None else 6.0
-    t_eq = t_eq if t_eq is not None else 11.0
-    t_demand = t_demand if t_demand is not None else 16.0
+def derive_viral_hook(smc, session_name):
+    """Generates a consistent, high-CTR 3-word cover headline based on live market structure."""
+    pa = smc.get("pa_signal", "").lower()
+    bias = smc.get("bias_label", "").upper()
+    if "sweep" in pa and "bearish" in bias.lower():
+        return "GOLD LIQUIDITY TRAP", "#ef4444"
+    elif "sweep" in pa and "bullish" in bias.lower():
+        return "GOLD STOP HUNT", "#00c896"
+    elif "bearish" in bias:
+        return "GOLD SUPPLY REJECTION", "#ef4444"
+    elif "bullish" in bias:
+        return "GOLD DEMAND BOUNCE", "#00c896"
+    return f"{session_name.split()[0]} GOLD SETUP", "#f59e0b"
 
-    # MarginV=535 places captions cleanly above the blue Telegram pill at Y=1500
-    ass_header = """[Script Info]
+def build_viral_cover_frame(smc, session_name, date_label, chart_png_path, out_png):
+    """Creates a uniform, eye-catching static cover frame (0.0s–0.45s) for consistent channel grid thumbnails."""
+    img = Image.new("RGB", (W, H), (9, 13, 24))
+    draw = ImageDraw.Draw(img)
+
+    f_brand = load_font(FONT_BOLD, 34)
+    f_sess = load_font(FONT_BOLD, 30)
+    f_hook = load_font(FONT_BOLD, 66)
+    f_price = load_font(FONT_BOLD, 36)
+    f_card_lbl = load_font(FONT_BOLD, 22)
+    f_card_val = load_font(FONT_BOLD, 34)
+    f_cta = load_font(FONT_BOLD, 28)
+
+    hook_text, accent_hex = derive_viral_hook(smc, session_name)
+    accent_rgb = tuple(int(accent_hex.lstrip("#")[i:i+2], 16) for i in (0, 2, 4))
+
+    # Top Brand Bar (Identical layout across all Shorts for uniform grid branding)
+    draw.rounded_rectangle([56, 70, 1024, 155], radius=18, fill=(17, 25, 42), outline=(45, 62, 92), width=3)
+    draw.ellipse([86, 97, 118, 129], fill=(245, 158, 11))
+    draw.text((135, 92), f"FR6 FX  •  XAUUSD {session_name}", fill=(255, 255, 255), font=f_brand)
+
+    # Big Bold Viral Hook Banner (Frame 0 Thumbnail Headline)
+    draw.rounded_rectangle([56, 178, 1024, 345], radius=22, fill=(15, 22, 38), outline=accent_rgb, width=4)
+    bbox = draw.textbbox((0, 0), hook_text, font=f_hook)
+    hw = bbox[2] - bbox[0]
+    draw.text(((W - hw) // 2, 198), hook_text, fill=(255, 255, 255), font=f_hook)
+
+    sub_line = f"LIVE GOLD: ${smc['live_price']}   |   {smc['bias_label']}   |   {date_label}"
+    sbbox = draw.textbbox((0, 0), sub_line, font=f_sess)
+    sw = sbbox[2] - sbbox[0]
+    draw.text(((W - sw) // 2, 286), sub_line, fill=accent_rgb, font=f_sess)
+
+    # Crisp Chart Preview Window with Exact Supply/Demand Rectangles
+    draw.rounded_rectangle([56, 370, 1024, 1245], radius=22, fill=(13, 18, 29), outline=(45, 62, 92), width=3)
+    if os.path.exists(chart_png_path):
+        c_img = Image.open(chart_png_path).convert("RGB").resize((956, 860), Image.Resampling.LANCZOS)
+        img.paste(c_img, (62, 377))
+
+    # 3 Clean Bottom Key-Level Cards
+    cards = [
+        ("SUPPLY ZONE", f"${smc['strong_high']}", (239, 68, 68), (44, 18, 26)),
+        ("50% EQUILIBRIUM", f"${smc['equilibrium']}", (245, 158, 11), (42, 32, 16)),
+        ("DEMAND ZONE", f"${smc['strong_low']}", (6, 182, 212), (14, 38, 48)),
+    ]
+    card_w = 304
+    for idx, (lbl, val, col, bg) in enumerate(cards):
+        cx = 56 + idx * 332
+        cy = 1272
+        draw.rounded_rectangle([cx, cy, cx + card_w, cy + 125], radius=18, fill=bg, outline=col, width=3)
+        draw.text((cx + 22, cy + 20), lbl, fill=col, font=f_card_lbl)
+        draw.text((cx + 22, cy + 58), val, fill=(255, 255, 255), font=f_card_val)
+
+    # Bottom Viral Badge Pill
+    draw.rounded_rectangle([140, 1445, 940, 1525], radius=40, fill=accent_rgb)
+    badge_txt = "⚡ WATCH LIVE INSTITUTIONAL ZONES ⚡"
+    bb = draw.textbbox((0, 0), badge_txt, font=f_price)
+    bw = bb[2] - bb[0]
+    draw.text(((W - bw) // 2, 1463), badge_txt, fill=(10, 14, 24), font=f_price)
+
+    tg_link = os.environ.get("TELEGRAM_LINK", "t.me/fr6fx_official").replace("https://", "").strip()
+    draw.rounded_rectangle([120, 1565, 960, 1625], radius=14, fill=(18, 28, 46), outline=(56, 189, 248), width=2)
+    cta = f"FREE TELEGRAM CHARTS & NEWS: {tg_link}"
+    cb = draw.textbbox((0, 0), cta, font=f_cta)
+    draw.text(((W - (cb[2] - cb[0])) // 2, 1580), cta, fill=(224, 242, 254), font=f_cta)
+
+    img.save(out_png)
+def build_background_plate(smc, session_name, date_label, out_png):
+    """Creates the clean, unobstructed vertical terminal frame (no floating boxes covering candles)."""
+    img = Image.new("RGB", (W, H), (9, 13, 24))
+    draw = ImageDraw.Draw(img)
+
+    f_brand = load_font(FONT_BOLD, 32)
+    f_sub = load_font(FONT_BOLD, 27)
+    f_card_lbl = load_font(FONT_BOLD, 21)
+    f_card_val = load_font(FONT_BOLD, 34)
+    f_cta = load_font(FONT_BOLD, 25)
+    f_disc = load_font(FONT_REG, 20)
+
+    # Top Header Bar
+    draw.rounded_rectangle([56, 70, W - 56, 152], radius=18, fill=(17, 25, 42), outline=(45, 62, 92), width=2)
+    draw.ellipse([82, 96, 110, 124], fill=(245, 158, 11))
+    draw.text((126, 93), f"FR6 FX  •  {session_name}  [LIVE SMC CHART]", fill=(255, 255, 255), font=f_brand)
+
+    # Second Status Strip
+    bias_col = (239, 68, 68) if "BEARISH" in smc["bias_label"].upper() else (0, 200, 150)
+    draw.rounded_rectangle([56, 170, W - 56, 236], radius=14, fill=(15, 22, 38), outline=(36, 50, 77), width=2)
+    status_txt = f"{smc['bias_label']}   |   DXY: {smc['dxy_now']}   |   GOLD: ${smc['live_price']}"
+    draw.text((84, 188), status_txt, fill=bias_col, font=f_sub)
+
+    # Chart Frame Border (960x860 live candle video sits cleanly inside)
+    draw.rounded_rectangle([54, 254, W - 54, 1126], radius=20, fill=(11, 16, 27), outline=(45, 62, 92), width=3)
+
+    # 3 Clean Bottom Summary Cards (below the chart so zero candles are blocked)
+    cards = [
+        ("SUPPLY CAP", f"${smc['strong_high']}", (239, 68, 68), (44, 18, 26)),
+        ("50% EQUILIBRIUM", f"${smc['equilibrium']}", (245, 158, 11), (42, 32, 16)),
+        ("DEMAND FLOOR", f"${smc['strong_low']}", (6, 182, 212), (14, 38, 48)),
+    ]
+    card_w = 304
+    for idx, (lbl, val, col, bg) in enumerate(cards):
+        cx = 56 + idx * 332
+        cy = 1152
+        draw.rounded_rectangle([cx, cy, cx + card_w, cy + 120], radius=16, fill=bg, outline=col, width=2)
+        draw.text((cx + 20, cy + 18), lbl, fill=col, font=f_card_lbl)
+        draw.text((cx + 20, cy + 54), val, fill=(255, 255, 255), font=f_card_val)
+
+    # Bottom Free Telegram CTA Bar
+    tg_link = os.environ.get("TELEGRAM_LINK", "t.me/fr6fx_official").replace("https://", "").strip()
+    draw.rounded_rectangle([56, 1545, W - 56, 1622], radius=14, fill=(18, 28, 46), outline=(56, 189, 248), width=2)
+    cta = f"FREE TELEGRAM CHARTS & NEWS: {tg_link}"
+    cb = draw.textbbox((0, 0), cta, font=f_cta)
+    draw.text(((W - (cb[2] - cb[0])) // 2, 1570), cta, fill=(224, 242, 254), font=f_cta)
+
+    disc = f"@FR6FX • {date_label} • Educational purposes only. Not financial advice."
+    db = draw.textbbox((0, 0), disc, font=f_disc)
+    draw.text(((W - (db[2] - db[0])) // 2, 1642), disc, fill=(148, 163, 184), font=f_disc)
+
+    img.save(out_png)
+
+def build_ass_subtitles(words, out_ass, time_offset=0.45):
+    """Generates punchy 3-word Hormozi-style dynamic captions shifted by cover duration."""
+    header = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
 
 [V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,DejaVu Sans,54,&H00FFFFFF,&H00000000,&H99090C12,-1,0,0,0,100,100,0,0,3,14,0,2,80,80,535,1
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,DejaVu Sans,58,&H00FFFFFF,&H0000FFFF,&H00080C14,&H80000000,-1,0,0,0,100,100,0,0,1,4,2,2,60,60,475,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    events = [ass_header]
-    for i in range(0, len(raw_words), 3):
-        chunk = raw_words[i:i+3]
-        first_word = next(iter(chunk))
-        last_word = chunk[-1]
-        t0 = sec_to_ass(first_word.get("start", 0.0))
-        t1 = sec_to_ass(last_word.get("end", 0.0) + 0.08)
-        formatted = []
-        for item in chunk:
-            clean = re.sub(r"[,;!?]+$", "", item.get("text", "")).upper()
-            if re.search(r"\d", clean):
-                formatted.append(f"{{\\c&H00D7FF&}}{clean}{{\\c&HFFFFFF&}}")
-            else:
-                formatted.append(clean)
-        events.append(f"Dialogue: 0,{t0},{t1},Default,,0,0,0,,{' '.join(formatted)}\n")
+    def fmt_ts(sec):
+        sec = max(sec, 0.0)
+        h = int(sec // 3600)
+        m = int((sec % 3600) // 60)
+        s = sec % 60
+        return f"{h}:{m:02d}:{s:05.2f}"
 
-    with open(out_ass, "w") as f:
-        f.writelines(events)
+    lines = [header]
+    chunk_size = 3
+    for i in range(0, len(words), chunk_size):
+        chunk = words[i:i + chunk_size]
+        if not chunk:
+            continue
+        start_t = chunk[0]["start"] + time_offset
+        end_t = chunk[-1]["end"] + time_offset + 0.12
+        for j, w in enumerate(chunk):
+            w_start = w["start"] + time_offset
+            w_end = (chunk[j + 1]["start"] + time_offset) if j + 1 < len(chunk) else end_t
+            styled_tokens = []
+            for k, tok in enumerate(chunk):
+                if k == j:
+                    styled_tokens.append(r"{\c&H0015CCFA&\fscx108\fscy108}" + tok["word"] + r"{\c&H00FFFFFF&\fscx100\fscy100}")
+                else:
+                    styled_tokens.append(tok["word"])
+            dialogue = " ".join(styled_tokens)
+            lines.append(f"Dialogue: 0,{fmt_ts(w_start)},{fmt_ts(w_end)},Default,,0,0,0,,{dialogue}\n")
 
-    return t_supply, t_eq, t_demand
+    with open(out_ass, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+def export_telegram_chart(smc, session_name, date_label, out_png):
+    """Creates the crisp, high-resolution annotated chart image posted to Telegram."""
+    canvas = Image.new("RGB", (1080, 1140), (9, 13, 24))
+    draw = ImageDraw.Draw(canvas)
 
-def compile_live_video(bg_png, vid_15m, vid_5m, audio_mp3, ass_file, cues, output_mp4):
-    """Composites live moving 15M->5M TradingView video (trimmed past black fade-in) + voice-synced zone wipes + subtle studio bed."""
-    dur_str = subprocess.check_output([
-        "ffprobe", "-v", "error", "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1", audio_mp3
-    ]).decode().strip()
-    dur = float(dur_str)
-    half = dur / 2.0
-    t_sup, t_eq, t_dem = cues
+    f_title = load_font(FONT_BOLD, 30)
+    f_sub = load_font(FONT_BOLD, 24)
+    f_lbl = load_font(FONT_BOLD, 19)
+    f_val = load_font(FONT_BOLD, 28)
 
-    wipe_sup = f"if(lt(t,{t_sup}),-940,min(70,-940+((t-{t_sup})/0.7)*1010))"
-    wipe_eq = f"if(lt(t,{t_eq}),-940,min(70,-940+((t-{t_eq})/0.7)*1010))"
-    wipe_dem = f"if(lt(t,{t_dem}),-940,min(70,-940+((t-{t_dem})/0.7)*1010))"
+    draw.rounded_rectangle([32, 24, 1048, 104], radius=16, fill=(17, 25, 42), outline=(45, 62, 92), width=2)
+    draw.text((56, 46), f"FR6 FX  •  XAUUSD {session_name} ({date_label})", fill=(255, 255, 255), font=f_title)
 
-    filter_graph = (
-        f"[0:v]scale=1080:1920,fps=30,format=rgba[bg];"
-        f"[1:v]scale=940:800,fps=30,trim=start=1.5:duration={half},setpts=PTS-STARTPTS[c15];"
-        f"[2:v]scale=940:800,fps=30,trim=start=1.5:duration={dur - half + 0.5},setpts=PTS-STARTPTS[c5];"
-        f"[c15][c5]concat=n=2:v=1:a=0,format=rgba[chart];"
-        f"[bg][chart]overlay=x=70:y=356:shortest=1[v_chart];"
-        f"[3:v]format=rgba[lsup];"
-        f"[4:v]format=rgba[leq];"
-        f"[5:v]format=rgba[ldem];"
-        f"[v_chart][lsup]overlay=x='{wipe_sup}':y=356:enable='gte(t,{t_sup})'[v_z1];"
-        f"[v_z1][leq]overlay=x='{wipe_eq}':y=356:enable='gte(t,{t_eq})'[v_z2];"
-        f"[v_z2][ldem]overlay=x='{wipe_dem}':y=356:enable='gte(t,{t_dem})'[v_z3];"
-        f"[v_z3]drawbox=x=0:y=1908:w='iw*(t/{dur})':h=12:color=0xF5B423:t=fill[vbar];"
-        f"[vbar]ass={ass_file}[vout];"
-        f"anoisesrc=color=pink:amplitude=0.015:duration={dur + 1.0},lowpass=f=180[amb];"
-        f"[6:a]aresample=44100,pan=stereo|c0=c0|c1=c0[vox];"
-        f"[vox][amb]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+    if os.path.exists("assets/tv_5m.png"):
+        chart = Image.open("assets/tv_5m.png").convert("RGB").resize((1016, 860), Image.Resampling.LANCZOS)
+        canvas.paste(chart, (32, 122))
+
+    cards = [
+        ("SUPPLY ZONE", f"${smc['strong_high']}", (239, 68, 68), (44, 18, 26)),
+        ("50% EQUILIBRIUM", f"${smc['equilibrium']}", (245, 158, 11), (42, 32, 16)),
+        ("DEMAND ZONE", f"${smc['strong_low']}", (6, 182, 212), (14, 38, 48)),
+    ]
+    for idx, (lbl, val, col, bg) in enumerate(cards):
+        cx = 32 + idx * 348
+        cy = 1002
+        draw.rounded_rectangle([cx, cy, cx + 320, cy + 112], radius=14, fill=bg, outline=col, width=2)
+        draw.text((cx + 18, cy + 16), lbl, fill=col, font=f_lbl)
+        draw.text((cx + 18, cy + 48), val, fill=(255, 255, 255), font=f_val)
+
+    canvas.save(out_png)
+    print("✅ High-res Telegram SMC Chart exported.")
+
+async def render_reel_video(spoken_script, smc, session_name, date_label, out_mp4, prefix="main"):
+    audio_mp3 = f"assets/{prefix}_voice.mp3"
+    cover_png = f"assets/{prefix}_cover.png"
+    bg_png = f"assets/{prefix}_bg.png"
+    ass_file = f"assets/{prefix}_subs.ass"
+    body_mp4 = f"assets/{prefix}_body.mp4"
+    cover_mp4 = f"assets/{prefix}_cover.mp4"
+
+    await generate_voiceover(spoken_script, audio_mp3)
+    words = extract_word_captions(audio_mp3)
+    dur = get_audio_duration(audio_mp3)
+    cover_dur = 0.45
+
+    build_viral_cover_frame(smc, session_name, date_label, "assets/tv_5m.png", cover_png)
+    build_background_plate(smc, session_name, date_label, bg_png)
+    build_ass_subtitles(words, ass_file, time_offset=0.0)
+
+    # 1. Render 0.45s Uniform Viral Cover Clip (guarantees cohesive grid thumbnails on YouTube & IG)
+    cmd_cover = [
+        "ffmpeg", "-y", "-loop", "1", "-t", str(cover_dur), "-i", cover_png,
+        "-f", "lavfi", "-t", str(cover_dur), "-i", "anullsrc=r=44100:cl=stereo",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "30", "-preset", "veryfast",
+        "-c:a", "aac", "-b:a", "128k", "-shortest", cover_mp4
+    ]
+    subprocess.run(cmd_cover, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # 2. Render Main Live-Candle Chart Analysis Body (15M first half -> 5M second half)
+    half_dur = dur / 2.0
+    filter_complex = (
+        f"[1:v]scale=960:860,trim=duration={half_dur},setpts=PTS-STARTPTS[c15];"
+        f"[2:v]scale=960:860,trim=duration={half_dur + 0.5},setpts=PTS-STARTPTS[c5];"
+        f"[c15][c5]concat=n=2:v=1:a=0[chart];"
+        f"[0:v][chart]overlay=60:260[bg_chart];"
+        f"[bg_chart]ass={ass_file}[v]"
     )
 
-    subprocess.run([
+    cmd_body = [
         "ffmpeg", "-y",
-        "-loop", "1", "-t", str(dur + 1.0), "-i", bg_png,
-        "-stream_loop", "-1", "-i", vid_15m,
-        "-stream_loop", "-1", "-i", vid_5m,
-        "-loop", "1", "-t", str(dur + 1.0), "-i", "assets/layer_supply.png",
-        "-loop", "1", "-t", str(dur + 1.0), "-i", "assets/layer_eq.png",
-        "-loop", "1", "-t", str(dur + 1.0), "-i", "assets/layer_demand.png",
+        "-loop", "1", "-t", str(dur + 0.3), "-i", bg_png,
+        "-stream_loop", "-1", "-i", "assets/tv_15m.webm",
+        "-stream_loop", "-1", "-i", "assets/tv_5m.webm",
         "-i", audio_mp3,
-        "-filter_complex", filter_graph,
-        "-map", "[vout]", "-map", "[aout]",
-        "-c:v", "libx264", "-profile:v", "main", "-level", "4.0", "-preset", "fast", "-crf", "22", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
-        "-movflags", "+faststart", "-shortest",
-        output_mp4
-    ], check=True)
+        "-filter_complex", filter_complex,
+        "-map", "[v]", "-map", "3:a",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "30", "-preset", "veryfast", "-crf", "20",
+        "-c:a", "aac", "-b:a", "128k", "-shortest", body_mp4
+    ]
+    subprocess.run(cmd_body, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # 3. Concatenate Uniform Cover Frame + Main Live Chart Video
+    concat_txt = f"assets/{prefix}_concat.txt"
+    with open(concat_txt, "w") as f:
+        f.write(f"file '{os.path.abspath(cover_mp4)}'\n")
+        f.write(f"file '{os.path.abspath(body_mp4)}'\n")
+
+    cmd_final = [
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_txt,
+        "-c", "copy", out_mp4
+    ]
+    subprocess.run(cmd_final, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(f"✅ Rendered {out_mp4} ({dur + cover_dur:.1f}s with uniform viral cover thumbnail)")
 
 async def main():
-    with open("assets/analysis_output.json") as f:
+    with open("assets/analysis_output.json", "r") as f:
         data = json.load(f)
 
     smc = data["smc"]
+    session = data["session"]
+    date_label = data["date_label"]
 
-    create_zone_layer_pngs(smc)
-    export_telegram_chart("assets/tv_15m.png", "assets/telegram_chart.png", data["session"], smc)
-    build_background_frame("assets/frame_bg.png", data["session"], smc)
+    export_telegram_chart(smc, session, date_label, "assets/telegram_chart.png")
 
-    await synthesize_human_voice(data["spoken_script"], "assets/v_raw.mp3", "assets/v_clean.mp3")
-    cues = build_pop_captions_and_cues("assets/v_clean.mp3", "assets/subs.ass")
-    compile_live_video("assets/frame_bg.png", "assets/tv_15m.webm", "assets/tv_5m.webm", "assets/v_clean.mp3", "assets/subs.ass", cues, "assets/final_reel.mp4")
-    print(f"✅ Live Moving Chart & Voice-Synced Zone Reel compiled! Cues: {cues}")
+    await render_reel_video(
+        data["spoken_script"],
+        smc,
+        session,
+        date_label,
+        "assets/final_reel.mp4",
+        prefix="main"
+    )
 
     if data.get("recap_enabled") and data.get("recap_spoken_script"):
-        build_background_frame("assets/recap_bg.png", "TARGET PLAYED OUT ✅", smc, is_recap=True)
-        await synthesize_human_voice(data["recap_spoken_script"], "assets/rv_raw.mp3", "assets/rv_clean.mp3")
-        rcues = build_pop_captions_and_cues("assets/rv_clean.mp3", "assets/rsubs.ass")
-        compile_live_video("assets/recap_bg.png", "assets/tv_15m.webm", "assets/tv_5m.webm", "assets/rv_clean.mp3", "assets/rsubs.ass", rcues, "assets/recap_reel.mp4")
-        print("✅ Bonus Recap Reel compiled.")
+        await render_reel_video(
+            data["recap_spoken_script"],
+            smc,
+            f"{session} RECAP",
+            date_label,
+            "assets/recap_reel.mp4",
+            prefix="recap"
+        )
 
 if __name__ == "__main__":
     asyncio.run(main())
