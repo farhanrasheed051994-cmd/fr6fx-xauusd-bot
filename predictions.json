@@ -115,6 +115,16 @@
     "equilibrium": 3618.15,
     "strong_low": 3599.9,
     "saved_5m_chart": "assets/history_20261123_1337_5m.png",
+    "evaluated": true,
+    "outcome": null
+  },
+  {
+    "timestamp": "20261123_2039",
+    "session": "XAUUSD ANALYSIS",
+    "strong_high": 3691.0,
+    "equilibrium": 3651.4,
+    "strong_low": 3611.8,
+    "saved_5m_chart": "assets/history_20261123_2039_5m.png",
     "evaluated": false
   }
 ]
