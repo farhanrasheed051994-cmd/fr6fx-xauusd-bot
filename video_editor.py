@@ -100,51 +100,39 @@ def build_composite_stage_frame(smc, session_name, hook_title, stage_png, pill_t
     canvas = Image.new("RGB", (1080, 1920), (11, 15, 23))
     draw = ImageDraw.Draw(canvas)
 
-    f_brand = load_font(FONT_BOLD, 25)
-    f_hook = load_font(FONT_BOLD, 44)
-    f_meta = load_font(FONT_BOLD, 24)
+    f_title = load_font(FONT_BOLD, 40)
+    f_meta = load_font(FONT_BOLD, 25)
     f_pill = load_font(FONT_BOLD, 32)
     f_follow = load_font(FONT_BOLD, 24)
     f_cta = load_font(FONT_BOLD, 21)
     f_disc = load_font(FONT_REG, 18)
 
-    brand_txt = f"FR6 FX  |  XAUUSD {session_name}"
-    bw = draw.textlength(brand_txt, font=f_brand)
-    draw.text(((1080 - bw) * 0.5, 165), brand_txt, fill=(250, 204, 21), font=f_brand)
-
-    words_h = str(hook_title).upper().split()
-    mid_idx = max(1, len(words_h) // 2)
-    line1 = " ".join(list(words_h).__getitem__(slice(0, mid_idx)))
-    line2 = " ".join(list(words_h).__getitem__(slice(mid_idx, None)))
-
-    w1 = draw.textlength(line1, font=f_hook)
-    draw.text(((1080 - w1) * 0.5, 208), line1, fill=(255, 255, 255), font=f_hook)
-    if line2:
-        w2 = draw.textlength(line2, font=f_hook)
-        draw.text(((1080 - w2) * 0.5, 262), line2, fill=(255, 255, 255), font=f_hook)
+    header_txt = f"XAUUSD {session_name} ANALYSIS"
+    hw = draw.textlength(header_txt, font=f_title)
+    draw.text(((1080 - hw) * 0.5, 195), header_txt, fill=(250, 204, 21), font=f_title)
 
     live_p = smc.get("live_price")
     bias_l = str(smc.get("bias_label", ""))
     meta_left = f"XAUUSD  •  {bias_l}"
     meta_right = f"${live_p}"
-    draw.text((64, 330), meta_left, fill=(148, 163, 184), font=f_meta)
+    draw.text((64, 275), meta_left, fill=(148, 163, 184), font=f_meta)
     rw = draw.textlength(meta_right, font=f_meta)
-    draw.text((1016 - rw, 330), meta_right, fill=(250, 204, 21), font=f_meta)
+    draw.text((1016 - rw, 275), meta_right, fill=(250, 204, 21), font=f_meta)
 
-    chart = Image.open(stage_png).convert("RGB").resize((1080, 950), Image.Resampling.LANCZOS)
-    canvas.paste(chart, (0, 368))
+    chart = Image.open(stage_png).convert("RGB").resize((1080, 990), Image.Resampling.LANCZOS)
+    canvas.paste(chart, (0, 320))
 
     pw = draw.textlength(pill_text, font=f_pill)
     box_w = min(920, max(500, int(pw + 80)))
     x1 = int((1080 - box_w) * 0.5)
     x2 = x1 + box_w
-    draw.rounded_rectangle((x1, 1345, x2, 1425), radius=22, fill=(17, 24, 39), outline=(245, 158, 11), width=4)
-    draw.text(((1080 - pw) * 0.5, 1367), pill_text, fill=(255, 255, 255), font=f_pill)
+    draw.rounded_rectangle((x1, 1340, x2, 1420), radius=22, fill=(17, 24, 39), outline=(245, 158, 11), width=4)
+    draw.text(((1080 - pw) * 0.5, 1362), pill_text, fill=(255, 255, 255), font=f_pill)
 
     if show_follow:
         fol_txt = "Follow @fr6fx for daily Gold analysis"
         fw = draw.textlength(fol_txt, font=f_follow)
-        draw.text(((1080 - fw) * 0.5, 1450), fol_txt, fill=(255, 255, 255), font=f_follow)
+        draw.text(((1080 - fw) * 0.5, 1445), fol_txt, fill=(255, 255, 255), font=f_follow)
 
     tg_link = (
         os.environ.get("TELEGRAM_LINK", "t.me/fr6fx_official")
@@ -152,13 +140,13 @@ def build_composite_stage_frame(smc, session_name, hook_title, stage_png, pill_t
         .replace("http://", "")
         .strip()
     )
-    cta_txt = f"Free Telegram Charts & News: {tg_link}"
+    cta_txt = f"Join Telegram for daily XAUUSD analysis: {tg_link}"
     cw = draw.textlength(cta_txt, font=f_cta)
-    draw.text(((1080 - cw) * 0.5, 1495), cta_txt, fill=(56, 189, 248), font=f_cta)
+    draw.text(((1080 - cw) * 0.5, 1490), cta_txt, fill=(56, 189, 248), font=f_cta)
 
     disc_txt = "Not financial advice"
     dw = draw.textlength(disc_txt, font=f_disc)
-    draw.text(((1080 - dw) * 0.5, 1532), disc_txt, fill=(100, 116, 139), font=f_disc)
+    draw.text(((1080 - dw) * 0.5, 1528), disc_txt, fill=(100, 116, 139), font=f_disc)
 
     canvas.save(out_png)
 def export_telegram_chart_graphic(smc, session_name, date_label, chart_png, out_png):
