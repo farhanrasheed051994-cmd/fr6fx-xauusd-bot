@@ -359,10 +359,10 @@ def clean_spoken_text(raw_text):
 def generate_ai_analysis(smc, news, session_name, played_out):
     client = genai.Client(
         api_key=os.environ.get("GEMINI_API_KEY"),
-        http_options={"timeout": 30}
+        http_options={"timeout": 60}
     )
-    img_15m = Image.open("assets/tv_15m.png")
-    img_5m = Image.open("assets/tv_5m.png")
+    img_15m = Image.open("assets/tv_15m.png").resize((540, 500), Image.Resampling.LANCZOS)
+    img_5m = Image.open("assets/tv_5m.png").resize((540, 500), Image.Resampling.LANCZOS)
 
     today_label = datetime.now(timezone.utc).strftime("%d %b %Y")
     tg_link = (
