@@ -2,7 +2,6 @@ import time
 import yfinance as yf
 import pandas as pd
 import requests
-import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
 def fetch_tradingview_spot():
@@ -12,8 +11,18 @@ def fetch_tradingview_spot():
         "symbols": {"tickers": ["OANDA:XAUUSD", "TVC:DXY"]},
         "columns": cols
     }
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+        "Origin": "https://tradingview.com",
+        "Referer": "https://tradingview.com/",
+        "Content-Type": "application/json"
+    }
     try:
-        r = requests.post(url, json=payload, timeout=10).json()
+        resp = requests.post(url, json=payload, headers=headers, timeout=12)
+        if resp.status_code != 200 or not resp.text.strip():
+            print(f"⚠️ TradingView scanner status {resp.status_code}—using Yahoo spot fallback")
+            return {}
+        r = resp.json()
         out = {}
         for row in r.get("data", []):
             out[row.get("s")] = dict(zip(cols, row.get("d", [])))
@@ -66,7 +75,6 @@ def get_smc_market_data():
     strong_high = round(max(float(today_range["High"].max()), float(xau.get("High.1D") or 0)), 2)
     strong_low = round(min(float(today_range["Low"].min()), float(xau.get("Low.1D") or 99999)), 2)
     equilibrium = round((strong_high + strong_low) / 2.0, 2)
-
     # 3. Session Highs & Lows (Asian: 00-07 UTC | London: 07-13 UTC | NY: 13-21 UTC)
     df_utc = df.tz_convert("UTC") if df.index.tz is not None else df.tz_localize("UTC")
     last_24h = df_utc.tail(96)
@@ -171,23 +179,24 @@ def get_smc_market_data():
     }
 
 def get_usd_fundamental_context():
-    """Fetches today's High & Medium impact USD economic calendar events."""
+    """Fetches today's High & Medium impact USD economic calendar events via JSON feed."""
     try:
         resp = requests.get(
             "https://faireconomy.media",
             headers={"User-Agent": "Mozilla/5.0"},
             timeout=10
         )
-        root = ET.fromstring(resp.content)
-        today_str = datetime.now(timezone.utc).strftime("%m-%d-%Y")
+        data = resp.json()
+        today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         events = []
-        for ev in root.findall("event"):
+        for ev in data:
             if (
-                ev.findtext("country") == "USD"
-                and ev.findtext("impact") in ("High", "Medium")
-                and ev.findtext("date") == today_str
+                ev.get("country") == "USD"
+                and ev.get("impact") in ("High", "Medium")
+                and str(ev.get("date", "")).startswith(today_iso)
             ):
-                events.append(f"• {ev.findtext('title')} [{ev.findtext('impact')} Impact — {ev.findtext('time')} UTC]")
+                ev_time = str(ev.get("date", ""))[11:16] or "TBD"
+                events.append(f"• {ev.get('title')} [{ev.get('impact')} Impact — {ev_time} UTC]")
         return events if events else ["• No major red-folder USD releases today; session liquidity & yields driving flow"]
     except Exception as e:
         print(f"⚠️ Economic calendar fetch warning: {e}")
