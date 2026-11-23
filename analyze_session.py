@@ -250,7 +250,7 @@ def render_tv_stage_chart(df, tf_label, smc, stage, out_png_path):
     plt.savefig(out_png_path, facecolor=bg_color, dpi=125)
     plt.close(fig)
 
-    img = Image.open(out_png_path).convert("RGB").resize((1080, 950), Image.Resampling.LANCZOS)
+    img = Image.open(out_png_path).convert("RGB").resize((1080, 990), Image.Resampling.LANCZOS)
     draw = ImageDraw.Draw(img, "RGBA")
     try:
         f_top = ImageFont.truetype(FONT_BOLD, 21)
@@ -279,6 +279,8 @@ def clean_spoken_text(raw_text):
     txt = re.sub(r"\$(\d+)\.\d+", r"\1", str(raw_text))
     txt = txt.replace("$", "")
     txt = txt.replace("XAUUSD", "Gold").replace("xauusd", "Gold")
+    txt = txt.replace("bio or description", "bio")
+    txt = txt.replace("description or bio", "bio")
     txt = txt.replace("Buy-side", "Buy side").replace("buy-side", "buy side")
     txt = txt.replace("Sell-side", "Sell side").replace("sell-side", "sell side")
     txt = txt.replace("FVG", "fair value gap")
@@ -290,8 +292,8 @@ def generate_ai_analysis(smc, news, session_name, played_out):
         api_key=os.environ.get("GEMINI_API_KEY"),
         http_options={"timeout": 45}
     )
-    img_stage4 = Image.open("assets/stage_4.png").resize((540, 475), Image.Resampling.LANCZOS)
-    img_stage5 = Image.open("assets/stage_5.png").resize((540, 475), Image.Resampling.LANCZOS)
+    img_stage4 = Image.open("assets/stage_4.png").resize((540, 495), Image.Resampling.LANCZOS)
+    img_stage5 = Image.open("assets/stage_5.png").resize((540, 495), Image.Resampling.LANCZOS)
 
     today_label = datetime.now(timezone.utc).strftime("%d %b %Y")
     tg_link = (
@@ -303,7 +305,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     news_block = "\n".join(news)
 
     is_bull = "BULLISH" in str(smc.get("bias_label", ""))
-    default_hook = "WILL GOLD PUMP FROM DEMAND?" if is_bull else "WILL GOLD REJECT RESISTANCE?"
+    header_title = f"XAUUSD {session_name} ANALYSIS"
 
     live_p = smc.get("live_price")
     pct_c = smc.get("pct_change")
@@ -331,15 +333,15 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     prompt = f"""
     You are the head Smart Money Concepts (SMC) mentor for @FR6FX.
     Generate JSON with:
-    1. 'hook_title': Short 4-5 word uppercase question for the top of the Reel (e.g. "{default_hook}").
+    1. 'hook_title': "{header_title}".
     2. 'spoken_script': A crisp 35-second vertical video voiceover (~85 words) that walks through:
        - M15 structure ({struct_t}),
        - Resistance at {int(round(float(s_high)))},
        - Support at {int(round(float(s_low)))},
        - Watch Zone ({int(round(float(ret_sup)))} to {int(round(float(s_low)))} if bullish, or {int(round(float(ret_res)))} to {int(round(float(s_high)))} if bearish),
        - Dropping to the 5 minute chart for confirmation—never chase,
-       - Ending with: "Follow FR6 FX and join our free Telegram in the bio or description for full chart markups and live news alerts."
-       Write ALL numbers as clean whole integers without decimals or dollar signs, and say "Gold" instead of XAUUSD.
+       - Ending with: "Follow FR6 FX and join our free Telegram in the bio for daily Gold analysis."
+       Write ALL numbers as clean whole integers without decimals or dollar signs, and always say "Gold" instead of XAUUSD.
     3. 'telegram_report': Mentor-style Telegram post (1,200-1,600 chars) using HTML <b> and <i> tags only.
 
     LIVE DATA:
@@ -353,12 +355,12 @@ def generate_ai_analysis(smc, news, session_name, played_out):
 
     Return ONLY valid JSON:
     {{
-      "hook_title": "{default_hook}",
+      "hook_title": "{header_title}",
       "date_label": "{today_label}",
       "session": "{session_name}",
       "spoken_script": "Full 35-second clean numeric voiceover script",
-      "youtube_title": "XAUUSD {session_name.title()} ({today_label}) | Gold Resistance, Support & Watch Zone #Shorts",
-      "social_caption": "Clean Reels caption with Resistance, Support, Watch Zone, Free Telegram (https://{tg_link}), Follow @FR6FX CTA, and educational disclaimer",
+      "youtube_title": "XAUUSD {session_name.title()} Analysis ({today_label}) | Gold Resistance, Support & Watch Zone #Shorts",
+      "social_caption": "Clean Reels caption with Resistance, Support, Watch Zone, Join Telegram for daily XAUUSD analysis (https://{tg_link}), Follow @FR6FX CTA, and educational disclaimer",
       "telegram_report": "Mentor-style Telegram breakdown with HTML bold/italic tags",
       "recap_enabled": false,
       "recap_spoken_script": ""
@@ -386,7 +388,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
 
     if not result and os.environ.get("GROQ_API_KEY"):
         groq_url = "".join(("https://", "api.", "groq.", "com/openai/v1/chat/completions"))
-        for g_model in ("openai/gpt-oss-120b", "qwen/qwen3-32b", "llama-3.1-8b-instant"):
+        for g_model in ("openai/gpt-oss-120b", "openai/gpt-oss-20b"):
             try:
                 g_resp = requests.post(
                     groq_url,
@@ -397,20 +399,23 @@ def generate_ai_analysis(smc, news, session_name, played_out):
                     },
                     json={
                         "model": g_model,
-                        "messages": list(({"role": "user", "content": prompt},)),
-                        "response_format": {"type": "json_object"},
+                        "messages": list((
+                            {"role": "system", "content": "Return ONLY raw valid JSON without markdown code fences."},
+                            {"role": "user", "content": prompt}
+                        )),
                         "temperature": 0.35
                     },
-                    timeout=20
+                    timeout=25
                 )
                 if g_resp.status_code == 200:
-                    raw_json = g_resp.json().get("choices", ()).__getitem__(0).get("message", {}).get("content", "")
-                    if raw_json:
-                        result = json.loads(raw_json)
+                    raw_txt = g_resp.json().get("choices", ()).__getitem__(0).get("message", {}).get("content", "").strip()
+                    raw_txt = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_txt)
+                    if raw_txt:
+                        result = json.loads(raw_txt)
                         print(f"✅ AI Mentor analysis generated using Groq ({g_model})")
                         break
                 else:
-                    print(f"⚠️ Groq {g_model} status {g_resp.status_code}")
+                    print(f"⚠️ Groq {g_model} status {g_resp.status_code}: {g_resp.text[:120]}")
             except Exception as e:
                 print(f"⚠️ Groq {g_model} warning: {e}")
 
@@ -420,7 +425,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
         print("🔄 Using built-in Mentor fallback analysis...")
         wz_txt = f"{int(round(float(s_low)))} to {int(round(float(ret_sup)))}" if is_bull else f"{int(round(float(ret_res)))} to {int(round(float(s_high)))}"
         result = {
-            "hook_title": default_hook,
+            "hook_title": header_title,
             "date_label": today_label,
             "session": session_name,
             "spoken_script": (
@@ -428,21 +433,21 @@ def generate_ai_analysis(smc, news, session_name, played_out):
                 f"Key resistance sits at {int(round(float(s_high)))}, while major support holds at {int(round(float(s_low)))}. "
                 f"Our primary watch zone is between {wz_txt}. "
                 f"Dropping down to the 5 minute chart, wait for clean confirmation before entering and never chase candles. "
-                f"Follow FR6 FX and join our free Telegram in the bio or description for full chart markups and live news alerts."
+                f"Follow FR6 FX and join our free Telegram in the bio for daily Gold analysis."
             ),
-            "youtube_title": f"XAUUSD {session_name.title()} ({today_label}) | Gold Resistance, Support & Watch Zone #Shorts",
+            "youtube_title": f"XAUUSD {session_name.title()} Analysis ({today_label}) | Gold Resistance, Support & Watch Zone #Shorts",
             "social_caption": (
-                f"📊 FR6 FX | XAUUSD {session_name} ({today_label})\n\n"
+                f"📊 FR6 FX | XAUUSD {session_name} ANALYSIS ({today_label})\n\n"
                 f"🔴 Resistance: ${s_high}\n"
                 f"🟡 Watch Zone: {sup_z if not is_bull else dem_z}\n"
                 f"🔵 Support: ${s_low}\n"
                 f"💵 DXY Impact: {dxy_b}\n\n"
-                f"📲 Join Free Telegram for Full Chart Markups & News Alerts: https://{tg_link}\n"
+                f"📲 Join Telegram for daily XAUUSD analysis: https://{tg_link}\n"
                 f"💾 Save & follow @FR6FX!\n"
                 f"⚠️ Not financial advice."
             ),
             "telegram_report": (
-                f"🟡 <b>FR6 FX | XAUUSD {session_name}</b>\n"
+                f"🟡 <b>FR6 FX | XAUUSD {session_name} ANALYSIS</b>\n"
                 f"💰 Live Spot: <b>${live_p}</b> ({bias_l})\n\n"
                 f"🎯 <b>Key Institutional Levels:</b>\n"
                 f"• 🔴 Resistance: <b>${s_high}</b>\n"
@@ -510,7 +515,7 @@ def main():
 
     build_progressive_chart_stages(smc)
     out = generate_ai_analysis(smc, news, session, played_out)
-    print(f"✅ Phase 3 complete for {session}. Hook: {out.get('hook_title')}")
+    print(f"✅ Phase 3 complete for {session}. Title: {out.get('hook_title')}")
 
 if __name__ == "__main__":
     main()
