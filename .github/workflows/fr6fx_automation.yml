@@ -38,6 +38,9 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TELEGRAM_LINK: ${{ secrets.TELEGRAM_LINK }}
+          TRADINGVIEW_CHART_URL: ${{ secrets.TRADINGVIEW_CHART_URL }}
+          TRADINGVIEW_SESSION_ID: ${{ secrets.TRADINGVIEW_SESSION_ID }}
+          TRADINGVIEW_SESSION_SIGN: ${{ secrets.TRADINGVIEW_SESSION_SIGN }}
         run: python analyze_session.py
 
       - name: Phase 4 - Edit Locked-Scale FR6FX Reels & Telegram Chart
