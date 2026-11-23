@@ -463,7 +463,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
       "recap_spoken_script": ""
     }}
     """
-        import requests as req_ai
+    import requests as req_ai
     result = None
 
     # Tier 1: Google Gemini (Multimodal Vision + SMC Data)
