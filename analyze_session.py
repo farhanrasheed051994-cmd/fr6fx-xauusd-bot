@@ -499,12 +499,13 @@ def generate_ai_analysis(smc, news, session_name, played_out):
         # Tier 2: Groq Free API (Ultra-fast Llama 3.3 70B JSON)
     if not result and os.environ.get("GROQ_API_KEY"):
         try:
+            groq_url = "https://" + "://groq.com" + "/openai/v1/chat/completions"
             g_resp = req_ai.post(
-                "https://groq.com",
+                groq_url,
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('GROQ_API_KEY').strip()}",
+                    "Authorization": "Bearer " + os.environ.get("GROQ_API_KEY", "").strip(),
                     "Content-Type": "application/json",
-                    "User-Agent": "Mozilla/5.0"
+                    "User-Agent": "FR6FX-Bot/1.0"
                 },
                 json={
                     "model": "llama-3.3-70b-versatile",
@@ -520,17 +521,18 @@ def generate_ai_analysis(smc, news, session_name, played_out):
                     result = json.loads(raw_json)
                     print("✅ AI Mentor analysis generated using Groq (Llama-3.3-70B)")
             else:
-                print(f"⚠️ Groq status {g_resp.status_code}: {g_resp.text[:120]}")
+                print(f"⚠️ Groq status {g_resp.status_code}: {g_resp.text[:160]}")
         except Exception as e:
             print(f"⚠️ Groq fallback warning: {e}")
 
     # Tier 3: GitHub Models Free Inference (Uses built-in GITHUB_TOKEN)
     if not result and os.environ.get("GITHUB_TOKEN"):
         try:
+            gh_url = "https://" + "models.github.ai" + "/inference/chat/completions"
             gh_resp = req_ai.post(
-                "https://github.ai",
+                gh_url,
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('GITHUB_TOKEN').strip()}",
+                    "Authorization": "Bearer " + os.environ.get("GITHUB_TOKEN", "").strip(),
                     "Content-Type": "application/json",
                     "Accept": "application/vnd.github+json"
                 },
@@ -548,10 +550,9 @@ def generate_ai_analysis(smc, news, session_name, played_out):
                     result = json.loads(raw_json)
                     print("✅ AI Mentor analysis generated using GitHub Models (GPT-4o-mini)")
             else:
-                print(f"⚠️ GitHub Models status {gh_resp.status_code}")
+                print(f"⚠️ GitHub Models status {gh_resp.status_code}: {gh_resp.text[:160]}")
         except Exception as e:
-            print(f"⚠️ GitHub Models fallback warning: {e}")
-    # Tier 4: Built-in Mentor Fallback (100% offline-safe)
+            print(f"⚠️ GitHub Models fallback warning: {e}")    # Tier 4: Built-in Mentor Fallback (100% offline-safe)
     if result:
         result.update({"spoken_script": clean_spoken_text(result.get("spoken_script", ""))})
     else:
