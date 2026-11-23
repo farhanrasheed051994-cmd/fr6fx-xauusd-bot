@@ -151,17 +151,16 @@ async def capture_real_tradingview_charts(smc):
             await page.keyboard.press("Escape")
             await page.wait_for_timeout(300)
 
-        await page.evaluate("""() => {
-            const selectors = (
-                'div[data-name="legend-delete-action"]',
-                'div[class*="toast"]',
-                'div[class*="banner"]',
-                'div[class*="popup"]',
-                'button[aria-label="Close"]'
+            await page.evaluate("""() => {
+            const selectors = new Array(
+                'div.tv-dialog__close',
+                'button.tv-dialog__close',
+                'div.toast-positioning-wrapper',
+                'div.banner-wrapper'
             );
             for (const sel of selectors) {
                 document.querySelectorAll(sel).forEach(el => {
-                    if (el && el.offsetHeight < 220) el.style.display = 'none';
+                    if (el && el.offsetHeight < 240) el.style.display = 'none';
                 });
             }
         }""")
@@ -321,12 +320,12 @@ def render_fallback_chart_image(df, tf_label, smc, out_png_path):
     plt.close(fig)
     overlay_smc_hud_on_chart(out_png_path, tf_label, smc)
 
-def build_motion_clip_from_png(png_path, out_mp4_path):
+def build_motion_clip_from_png(png_path, out_path):
     cmd = (
         "ffmpeg", "-y", "-loop", "1", "-framerate", "30", "-t", "22", "-i", png_path,
         "-vf", "scale=1080:1000",
         "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
-        "-pix_fmt", "yuv420p", "-an", out_mp4_path
+        "-pix_fmt", "yuv420p", "-an", "-f", "mp4", out_path
     )
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
