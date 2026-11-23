@@ -38,6 +38,8 @@ jobs:
         env:
           PYTHONUNBUFFERED: "1"
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TELEGRAM_LINK: ${{ secrets.TELEGRAM_LINK }}
           TRADINGVIEW_CHART_URL: ${{ secrets.TRADINGVIEW_CHART_URL }}
           TRADINGVIEW_SESSION_ID: ${{ secrets.TRADINGVIEW_SESSION_ID }}
