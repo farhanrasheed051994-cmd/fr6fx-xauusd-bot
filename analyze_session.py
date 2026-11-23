@@ -1,9 +1,6 @@
 import os
 import re
 import json
-import time
-import asyncio
-import subprocess
 import requests
 import numpy as np
 import pandas as pd
@@ -24,11 +21,11 @@ FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 def detect_session():
     utc_hour = datetime.now(timezone.utc).hour
-    if 4 <= utc_hour <= 9:
-        return "LONDON ANALYSIS"
-    elif 10 <= utc_hour <= 15:
-        return "NEW YORK ANALYSIS"
-    return "XAUUSD ANALYSIS"
+    if 4 <= utc_hour <= 11:
+        return "LONDON SESSION"
+    elif 12 <= utc_hour <= 19:
+        return "NEW YORK SESSION"
+    return "ASIAN SESSION"
 
 def check_previous_call_played_out(smc):
     if not os.path.exists(MEMORY_FILE):
@@ -115,7 +112,7 @@ def detect_swing_badges(df):
     keep_from = max(0, len(badges) - 5)
     return list(badges).__getitem__(slice(keep_from, None))
 def render_tv_stage_chart(df, tf_label, smc, stage, out_png_path):
-    fig, ax = plt.subplots(figsize=(8.64, 8.0), dpi=125)
+    fig, ax = plt.subplots(figsize=(8.64, 7.6), dpi=125)
     bg_color = "#131722"
     fig.patch.set_facecolor(bg_color)
     ax.set_facecolor(bg_color)
@@ -144,8 +141,8 @@ def render_tv_stage_chart(df, tf_label, smc, stage, out_png_path):
     c_low = min(float(df.get("Low").min()), sup_lvl, inv_lvl)
     c_high = max(float(df.get("High").max()), res_lvl, inv_lvl)
     c_span = max(c_high - c_low, 10.0)
-    y_min = c_low - c_span * 0.08
-    y_max = c_high + c_span * 0.09
+    y_min = c_low - c_span * 0.09
+    y_max = c_high + c_span * 0.10
 
     for i in range(n_total):
         c_val = float(closes.__getitem__(i))
@@ -174,17 +171,17 @@ def render_tv_stage_chart(df, tf_label, smc, stage, out_png_path):
     if stage >= 2:
         ax.axhline(res_lvl, color="#F23645", linestyle="--", linewidth=1.8, zorder=5)
         ax.text(
-            0.4, res_lvl + c_span * 0.012,
+            1.2, res_lvl + c_span * 0.012,
             f"RESISTANCE  {int(round(res_lvl))}",
-            color="#F23645", fontsize=10.5, fontweight="bold", va="bottom", zorder=7
+            color="#F23645", fontsize=10.0, fontweight="bold", va="bottom", zorder=7
         )
 
     if stage >= 3:
         ax.axhline(sup_lvl, color="#00E5FF", linestyle="--", linewidth=1.8, zorder=5)
         ax.text(
-            0.4, sup_lvl - c_span * 0.012,
+            1.2, sup_lvl - c_span * 0.012,
             f"SUPPORT  {int(round(sup_lvl))}",
-            color="#00E5FF", fontsize=10.5, fontweight="bold", va="top", zorder=7
+            color="#00E5FF", fontsize=10.0, fontweight="bold", va="top", zorder=7
         )
 
     if stage >= 4:
@@ -194,23 +191,23 @@ def render_tv_stage_chart(df, tf_label, smc, stage, out_png_path):
             linewidth=1.3, edgecolor="#F59E0B", facecolor="#F59E0B", alpha=0.22, zorder=2
         ))
         ax.text(
-            n_total + 4.8, wz_low + wz_h * 0.5,
+            n_total + 6.4, wz_low + wz_h * 0.5,
             "WATCH ZONE",
-            color="#FBBF24", fontsize=9.8, fontweight="bold", ha="right", va="center", zorder=7
+            color="#FBBF24", fontsize=9.0, fontweight="bold", ha="right", va="center", zorder=7
         )
 
     if stage >= 5:
         ax.axhline(inv_lvl, color="#FB7185", linestyle=":", linewidth=1.5, zorder=5)
         ax.text(
-            n_total * 0.45, inv_lvl - c_span * 0.012 if is_bull else inv_lvl + c_span * 0.012,
+            n_total * 0.44, inv_lvl - c_span * 0.012 if is_bull else inv_lvl + c_span * 0.012,
             f"Invalid {'below' if is_bull else 'above'} {int(round(inv_lvl))}",
-            color="#FB7185", fontsize=9.5, fontweight="bold",
+            color="#FB7185", fontsize=9.2, fontweight="bold",
             va="top" if is_bull else "bottom", zorder=7
         )
 
         x_start = n_total - 1
-        x_mid = n_total + 2.2
-        x_end = n_total + 6.2
+        x_mid = n_total + 1.8
+        x_end = n_total + 5.2
         wz_mid = (wz_low + wz_high) * 0.5
         target_p = res_lvl - c_span * 0.03 if is_bull else sup_lvl + c_span * 0.03
 
@@ -224,17 +221,17 @@ def render_tv_stage_chart(df, tf_label, smc, stage, out_png_path):
             zorder=8
         )
 
-    ax.plot((n_total - 1, n_total + 7), (live_p, live_p), color="#64748b", linestyle=":", linewidth=1.1, zorder=4)
+    ax.plot((n_total - 1, n_total + 6.8), (live_p, live_p), color="#64748b", linestyle=":", linewidth=1.1, zorder=4)
     ax.text(
-        n_total + 7.2, live_p, f" {live_p:.2f} ",
-        color="#ffffff", fontsize=9.5, fontweight="bold", va="center",
-        bbox=dict(boxstyle="round,pad=0.26", facecolor="#F23645" if live_p < opens.__getitem__(n_total - 1) else "#089981", edgecolor="none"),
+        n_total + 7.0, live_p, f" {live_p:.2f} ",
+        color="#ffffff", fontsize=9.0, fontweight="bold", va="center",
+        bbox=dict(boxstyle="round,pad=0.24", facecolor="#F23645" if live_p < opens.__getitem__(n_total - 1) else "#089981", edgecolor="none"),
         zorder=9
     )
 
     ax.yaxis.tick_right()
-    ax.tick_params(axis="y", colors="#94a3b8", labelsize=10.5, length=0)
-    ax.tick_params(axis="x", colors="#64748b", labelsize=8.5, length=0)
+    ax.tick_params(axis="y", colors="#94a3b8", labelsize=9.8, length=0)
+    ax.tick_params(axis="x", colors="#64748b", labelsize=8.2, length=0)
     ax.grid(True, color="#1e2433", linestyle="-", linewidth=0.75, alpha=0.9)
 
     tick_step = max(n_total // 5, 1)
@@ -247,22 +244,22 @@ def render_tv_stage_chart(df, tf_label, smc, stage, out_png_path):
         ax.spines.get(spine).set_visible(False)
 
     ax.set_ylim(y_min, y_max)
-    ax.set_xlim(-1, n_total + 9.5)
+    ax.set_xlim(-1.5, n_total + 9.8)
 
-    plt.subplots_adjust(left=0.01, right=0.87, top=0.985, bottom=0.045)
+    plt.subplots_adjust(left=0.055, right=0.835, top=0.985, bottom=0.048)
     plt.savefig(out_png_path, facecolor=bg_color, dpi=125)
     plt.close(fig)
 
-    img = Image.open(out_png_path).convert("RGB").resize((1080, 1000), Image.Resampling.LANCZOS)
+    img = Image.open(out_png_path).convert("RGB").resize((1080, 950), Image.Resampling.LANCZOS)
     draw = ImageDraw.Draw(img, "RGBA")
     try:
-        f_top = ImageFont.truetype(FONT_BOLD, 22)
+        f_top = ImageFont.truetype(FONT_BOLD, 21)
     except Exception:
         f_top = ImageFont.load_default()
 
-    draw.text((22, 18), f"XAUUSD  •  {tf_label}  •  FR6 FX", fill=(148, 163, 184, 255), font=f_top)
-    draw.ellipse((22, 54, 36, 68), fill=(242, 54, 69, 255))
-    draw.text((44, 49), "LIVE", fill=(242, 54, 69, 255), font=f_top)
+    draw.text((58, 16), f"XAUUSD  •  {tf_label}  •  FR6 FX", fill=(148, 163, 184, 255), font=f_top)
+    draw.ellipse((58, 50, 72, 64), fill=(242, 54, 69, 255))
+    draw.text((80, 45), "LIVE", fill=(242, 54, 69, 255), font=f_top)
     img.save(out_png_path)
 def build_progressive_chart_stages(smc):
     os.makedirs("assets", exist_ok=True)
@@ -281,6 +278,7 @@ def build_progressive_chart_stages(smc):
 def clean_spoken_text(raw_text):
     txt = re.sub(r"\$(\d+)\.\d+", r"\1", str(raw_text))
     txt = txt.replace("$", "")
+    txt = txt.replace("XAUUSD", "Gold").replace("xauusd", "Gold")
     txt = txt.replace("Buy-side", "Buy side").replace("buy-side", "buy side")
     txt = txt.replace("Sell-side", "Sell side").replace("sell-side", "sell side")
     txt = txt.replace("FVG", "fair value gap")
@@ -292,8 +290,8 @@ def generate_ai_analysis(smc, news, session_name, played_out):
         api_key=os.environ.get("GEMINI_API_KEY"),
         http_options={"timeout": 45}
     )
-    img_stage4 = Image.open("assets/stage_4.png").resize((540, 500), Image.Resampling.LANCZOS)
-    img_stage5 = Image.open("assets/stage_5.png").resize((540, 500), Image.Resampling.LANCZOS)
+    img_stage4 = Image.open("assets/stage_4.png").resize((540, 475), Image.Resampling.LANCZOS)
+    img_stage5 = Image.open("assets/stage_5.png").resize((540, 475), Image.Resampling.LANCZOS)
 
     today_label = datetime.now(timezone.utc).strftime("%d %b %Y")
     tg_link = (
@@ -341,7 +339,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
        - Watch Zone ({int(round(float(ret_sup)))} to {int(round(float(s_low)))} if bullish, or {int(round(float(ret_res)))} to {int(round(float(s_high)))} if bearish),
        - Dropping to the 5 minute chart for confirmation—never chase,
        - Ending with: "Follow FR6 FX and join our free Telegram in the bio or description for full chart markups and live news alerts."
-       Write ALL numbers as clean whole integers without decimals or dollar signs.
+       Write ALL numbers as clean whole integers without decimals or dollar signs, and say "Gold" instead of XAUUSD.
     3. 'telegram_report': Mentor-style Telegram post (1,200-1,600 chars) using HTML <b> and <i> tags only.
 
     LIVE DATA:
@@ -387,60 +385,34 @@ def generate_ai_analysis(smc, news, session_name, played_out):
                 print(f"⚠️ {model_name} busy: {e}")
 
     if not result and os.environ.get("GROQ_API_KEY"):
-        try:
-            groq_url = "".join(("https://", "api.", "groq.", "com/openai/v1/chat/completions"))
-            g_resp = requests.post(
-                groq_url,
-                headers={
-                    "Authorization": "Bearer " + os.environ.get("GROQ_API_KEY", "").strip(),
-                    "Content-Type": "application/json",
-                    "User-Agent": "FR6FX-Bot/1.0"
-                },
-                json={
-                    "model": "llama-3.3-70b-versatile",
-                    "messages": list(({"role": "user", "content": prompt},)),
-                    "response_format": {"type": "json_object"},
-                    "temperature": 0.35
-                },
-                timeout=25
-            )
-            if g_resp.status_code == 200:
-                raw_json = g_resp.json().get("choices", ()).__getitem__(0).get("message", {}).get("content", "")
-                if raw_json:
-                    result = json.loads(raw_json)
-                    print("✅ AI Mentor analysis generated using Groq (Llama-3.3-70B)")
-            else:
-                print(f"⚠️ Groq status {g_resp.status_code}: {g_resp.text[:160]}")
-        except Exception as e:
-            print(f"⚠️ Groq fallback warning: {e}")
-
-    if not result and os.environ.get("GITHUB_TOKEN"):
-        try:
-            gh_url = "".join(("https://", "models.", "github.", "ai/inference/chat/completions"))
-            gh_resp = requests.post(
-                gh_url,
-                headers={
-                    "Authorization": "Bearer " + os.environ.get("GITHUB_TOKEN", "").strip(),
-                    "Content-Type": "application/json",
-                    "Accept": "application/vnd.github+json"
-                },
-                json={
-                    "model": "openai/gpt-4o-mini",
-                    "messages": list(({"role": "user", "content": prompt},)),
-                    "response_format": {"type": "json_object"},
-                    "temperature": 0.35
-                },
-                timeout=25
-            )
-            if gh_resp.status_code == 200:
-                raw_json = gh_resp.json().get("choices", ()).__getitem__(0).get("message", {}).get("content", "")
-                if raw_json:
-                    result = json.loads(raw_json)
-                    print("✅ AI Mentor analysis generated using GitHub Models (GPT-4o-mini)")
-            else:
-                print(f"⚠️ GitHub Models status {gh_resp.status_code}")
-        except Exception as e:
-            print(f"⚠️ GitHub Models fallback warning: {e}")
+        groq_url = "".join(("https://", "api.", "groq.", "com/openai/v1/chat/completions"))
+        for g_model in ("openai/gpt-oss-120b", "qwen/qwen3-32b", "llama-3.1-8b-instant"):
+            try:
+                g_resp = requests.post(
+                    groq_url,
+                    headers={
+                        "Authorization": "Bearer " + os.environ.get("GROQ_API_KEY", "").strip(),
+                        "Content-Type": "application/json",
+                        "User-Agent": "FR6FX-Bot/1.0"
+                    },
+                    json={
+                        "model": g_model,
+                        "messages": list(({"role": "user", "content": prompt},)),
+                        "response_format": {"type": "json_object"},
+                        "temperature": 0.35
+                    },
+                    timeout=20
+                )
+                if g_resp.status_code == 200:
+                    raw_json = g_resp.json().get("choices", ()).__getitem__(0).get("message", {}).get("content", "")
+                    if raw_json:
+                        result = json.loads(raw_json)
+                        print(f"✅ AI Mentor analysis generated using Groq ({g_model})")
+                        break
+                else:
+                    print(f"⚠️ Groq {g_model} status {g_resp.status_code}")
+            except Exception as e:
+                print(f"⚠️ Groq {g_model} warning: {e}")
 
     if result:
         result.update({"spoken_script": clean_spoken_text(result.get("spoken_script", ""))})
