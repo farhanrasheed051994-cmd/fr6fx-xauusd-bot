@@ -32,6 +32,16 @@ def check_previous_call_played_out(smc):
         return None
 
     prev = history[-1]
+
+    # Require at least 2 hours elapsed before evaluating a setup
+    try:
+        prev_dt = datetime.strptime(prev["timestamp"], "%Y%m%d_%H%M").replace(tzinfo=timezone.utc)
+        hours_elapsed = (datetime.now(timezone.utc) - prev_dt).total_seconds() / 3600.0
+        if hours_elapsed < 2.0:
+            return None
+    except Exception:
+        pass
+
     h6 = smc["recent_6h_high"]
     l6 = smc["recent_6h_low"]
 
@@ -118,13 +128,18 @@ async def capture_tradingview_charts():
 def generate_ai_analysis(smc, news, session_name, played_out):
     client = genai.Client(
         api_key=os.environ["GEMINI_API_KEY"],
-        http_options={"timeout": 25000}
+        http_options={"timeout": 30000}
     )
     img_15m = Image.open("assets/tv_15m.png")
     img_5m = Image.open("assets/tv_5m.png")
 
     today_label = datetime.now(timezone.utc).strftime("%d %b %Y")
-    tg_link = os.environ.get("TELEGRAM_LINK", "t.me/fr6fx_official").strip()
+    tg_link = (
+        os.environ.get("TELEGRAM_LINK", "t.me/fr6fx_official")
+        .replace("https://", "")
+        .replace("http://", "")
+        .strip()
+    )
     news_block = "\n".join(news)
 
     recap_prompt = ""
@@ -165,7 +180,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     - Cover the live session price action, liquidity sweep/rejection ({smc['pa_signal']}), Supply & Demand zones, and DXY impact.
     - Include this exact natural CTA near the end: "Join our free Telegram channel in the bio or description for full chart markups and live news alerts, and comment your bias below."
 
-    RULES FOR 'telegram_report' (Mentor-style Telegram post under 950 characters so it fits cleanly in a Telegram photo caption):
+    RULES FOR 'telegram_report' (Mentor-style Telegram post under 950 characters using HTML tags <b> and <i> only, NO asterisks):
     - Act like a patient, disciplined mentor teaching your community how to read the chart.
     - Include sections with clean emojis:
       1. 📊 SESSION CONTEXT & SESSION HIGHS/LOWS (Asia, London, NY, PDH/PDL)
@@ -181,14 +196,14 @@ def generate_ai_analysis(smc, news, session_name, played_out):
       "session": "{session_name}",
       "spoken_script": "Full 42-second phonetic voiceover script including free Telegram CTA",
       "youtube_title": "XAUUSD {session_name.title()} Smart Money Analysis ({today_label}) | Gold Supply & Demand #Shorts",
-      "social_caption": "Clean Reels caption with Supply/Demand levels, DXY bias, FREE TELEGRAM LINK ({tg_link}), Follow @FR6FX CTA, and educational disclaimer",
-      "telegram_report": "Complete mentor-style Telegram chart breakdown under 950 characters",
+      "social_caption": "Clean Reels caption with Supply/Demand levels, DXY bias, FREE TELEGRAM LINK (https://{tg_link}), Follow @FR6FX CTA, and educational disclaimer",
+      "telegram_report": "Complete mentor-style Telegram chart breakdown under 950 characters using HTML bold/italic tags",
       "recap_enabled": false,
       "recap_spoken_script": ""
     }}
     """
 
-    models_to_try = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
+    models_to_try = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
     response = None
 
     for model_name in models_to_try:
@@ -210,7 +225,6 @@ def generate_ai_analysis(smc, news, session_name, played_out):
         if response and response.text:
             print(f"✅ AI Mentor analysis generated using {model_name}")
             break
-
     if response and response.text:
         result = json.loads(response.text)
     else:
@@ -238,24 +252,24 @@ def generate_ai_analysis(smc, news, session_name, played_out):
                 f"⚠️ Educational purposes only. Not financial advice."
             ),
             "telegram_report": (
-                f"🟡 *FR6 FX MENTOR BRIEF — XAUUSD ({session_name})*\n"
-                f"💰 Live Spot: *${smc['live_price']}* ({smc['bias_label']})\n\n"
-                f"📍 *Session & Daily Liquidity:*\n"
+                f"🟡 <b>FR6 FX MENTOR BRIEF — XAUUSD ({session_name})</b>\n"
+                f"💰 Live Spot: <b>${smc['live_price']}</b> ({smc['bias_label']})\n\n"
+                f"📍 <b>Session & Daily Liquidity:</b>\n"
                 f"• PDH / PDL: ${smc['pdh']} / ${smc['pdl']}\n"
                 f"• Asia Range: ${smc['asia_low']} – ${smc['asia_high']}\n"
                 f"• London Range: ${smc['london_low']} – ${smc['london_high']}\n\n"
-                f"💧 *Price Action & Imbalance:*\n"
+                f"💧 <b>Price Action & Imbalance:</b>\n"
                 f"• {smc['pa_signal']}\n"
                 f"• {smc['fvg_note']}\n\n"
-                f"🎯 *Zones to Watch:*\n"
+                f"🎯 <b>Zones to Watch:</b>\n"
                 f"• 🔴 Supply Cap: {smc['supply_zone']} (Retest: ${smc['retest_res']})\n"
                 f"• ⚖️ 50% Equilibrium: ${smc['equilibrium']}\n"
                 f"• 🔵 Demand Floor: {smc['demand_zone']} (Retest: ${smc['retest_sup']})\n\n"
-                f"📰 *DXY & USD Fundamentals:*\n"
+                f"📰 <b>DXY & USD Fundamentals:</b>\n"
                 f"• DXY: {smc['dxy_bias']}\n"
                 f"{news_block}\n\n"
-                f"🧠 *Mentor Rule:* Never chase mid-range candles. Wait for a liquidity sweep into Supply/Demand + 5m structure shift.\n"
-                f"⚠️ _Educational analysis only. Manage risk._"
+                f"🧠 <b>Mentor Rule:</b> Never chase mid-range candles. Wait for a liquidity sweep into Supply/Demand + 5m structure shift.\n"
+                f"⚠️ <i>Educational analysis only. Manage risk.</i>"
             ),
             "recap_enabled": False,
             "recap_spoken_script": ""
@@ -272,15 +286,26 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     saved_5m = f"assets/history_{ts}_5m.png"
     img_5m.save(saved_5m)
 
-    history.append({
-        "timestamp": ts,
-        "session": session_name,
-        "strong_high": smc["strong_high"],
-        "equilibrium": smc["equilibrium"],
-        "strong_low": smc["strong_low"],
-        "saved_5m_chart": saved_5m,
-        "evaluated": False
-    })
+    # Avoid logging duplicate levels if strong_high & strong_low haven't changed
+    is_duplicate = (
+        history
+        and not history[-1].get("evaluated")
+        and float(history[-1]["strong_high"]) == float(smc["strong_high"])
+        and float(history[-1]["strong_low"]) == float(smc["strong_low"])
+    )
+
+    if not is_duplicate:
+        history.append({
+            "timestamp": ts,
+            "session": session_name,
+            "strong_high": smc["strong_high"],
+            "equilibrium": smc["equilibrium"],
+            "strong_low": smc["strong_low"],
+            "saved_5m_chart": saved_5m,
+            "evaluated": False
+        })
+    else:
+        print("ℹ️ Levels unchanged from last open call—skipping duplicate prediction log.")
 
     with open(MEMORY_FILE, "w") as f:
         json.dump(history[-15:], f, indent=2)
