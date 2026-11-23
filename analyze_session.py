@@ -321,11 +321,12 @@ def render_fallback_chart_image(df, tf_label, smc, out_png_path):
     plt.close(fig)
     overlay_smc_hud_on_chart(out_png_path, tf_label, smc)
 
-def build_motion_clip_from_png(png_path, out_webm_path):
+def build_motion_clip_from_png(png_path, out_mp4_path):
     cmd = (
-        "ffmpeg", "-y", "-loop", "1", "-t", "22", "-i", png_path,
-        "-vf", "scale=1134:1050,zoompan=z='min(zoom+0.0008,1.05)':d=660:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1000:fps=30",
-        "-c:v", "libvpx-vp9", "-b:v", "2400k", "-an", out_webm_path
+        "ffmpeg", "-y", "-loop", "1", "-framerate", "30", "-t", "22", "-i", png_path,
+        "-vf", "scale=1080:1000",
+        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
+        "-pix_fmt", "yuv420p", "-an", out_mp4_path
     )
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -333,7 +334,7 @@ async def capture_tradingview_charts(smc):
     os.makedirs("assets", exist_ok=True)
     captured_live = False
     try:
-        captured_live = await capture_real_tradingview_charts(smc)
+        captured_live = await asyncio.wait_for(capture_real_tradingview_charts(smc), timeout=55.0)
     except Exception as e:
         print(f"⚠️ Real TradingView capture fallback triggered: {e}")
 
@@ -345,7 +346,8 @@ async def capture_tradingview_charts(smc):
 
     build_motion_clip_from_png("assets/tv_15m.png", "assets/tv_15m.webm")
     build_motion_clip_from_png("assets/tv_5m.png", "assets/tv_5m.webm")
-    print("✅ 1080x1000 Retina 15M & 5M charts + smooth motion clips ready.")
+    print("✅ 1080x1000 Retina 15M & 5M charts + clips ready in seconds.")
+
 def clean_spoken_text(raw_text):
     txt = re.sub(r"\$(\d+)\.\d+", r"\1", str(raw_text))
     txt = txt.replace("$", "")
@@ -358,7 +360,7 @@ def clean_spoken_text(raw_text):
 def generate_ai_analysis(smc, news, session_name, played_out):
     client = genai.Client(
         api_key=os.environ.get("GEMINI_API_KEY"),
-        http_options={"timeout": 30000}
+        http_options={"timeout": 30}
     )
     img_15m = Image.open("assets/tv_15m.png")
     img_5m = Image.open("assets/tv_5m.png")
