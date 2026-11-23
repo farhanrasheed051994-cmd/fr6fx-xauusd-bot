@@ -205,8 +205,8 @@ def build_viral_cover_frame(smc, session_name, date_label, chart_png, out_png):
 def export_telegram_chart_graphic(smc, session_name, date_label, chart_png, out_png):
     canvas = Image.new("RGB", (1080, 1280), (11, 16, 27))
     draw = ImageDraw.Draw(canvas)
-    f_title = load_font(FONT_BOLD, 28)
-    f_sub = load_font(FONT_BOLD, 20)
+    f_title = load_font(FONT_BOLD, 24)
+    f_sub = load_font(FONT_BOLD, 19)
     f_card_lbl = load_font(FONT_BOLD, 18)
     f_card_val = load_font(FONT_BOLD, 24)
 
