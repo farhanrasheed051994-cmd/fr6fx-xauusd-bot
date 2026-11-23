@@ -1,3 +1,4 @@
+import time
 import yfinance as yf
 import pandas as pd
 import requests
@@ -5,34 +6,51 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
 def fetch_tradingview_spot():
-    url = "https://" + ".".join(["scanner", "tradingview", "com"]) + "/cfd/scan"
+    url = "https://tradingview.com"
     cols = ["close", "change", "high", "low", "EMA20|5", "EMA50|5", "High.1D", "Low.1D", "RSI"]
     payload = {
         "symbols": {"tickers": ["OANDA:XAUUSD", "TVC:DXY"]},
         "columns": cols
     }
-    r = requests.post(url, json=payload, timeout=10).json()
-    out = {}
-    for row in r.get("data", []):
-        out[row.get("s")] = dict(zip(cols, row.get("d", [])))
-    return out
+    try:
+        r = requests.post(url, json=payload, timeout=10).json()
+        out = {}
+        for row in r.get("data", []):
+            out[row.get("s")] = dict(zip(cols, row.get("d", [])))
+        return out
+    except Exception as e:
+        print(f"⚠️ TradingView scanner warning: {e}")
+        return {}
+
+def download_gold_candles():
+    """Fetches 5 days of 15m candles with retry & spot ticker fallback."""
+    for ticker in ["GC=F", "XAUUSD=X"]:
+        for attempt in range(2):
+            try:
+                df = yf.download(ticker, period="5d", interval="15m", progress=False)
+                if df is not None and not df.empty and len(df) >= 20:
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.get_level_values(0)
+                    return df
+            except Exception as e:
+                print(f"⚠️ yfinance {ticker} attempt {attempt + 1} failed: {e}")
+            time.sleep(2)
+    raise RuntimeError("Failed to fetch Gold 15m candle data from Yahoo Finance.")
 
 def get_smc_market_data():
     tv = fetch_tradingview_spot()
     xau = tv.get("OANDA:XAUUSD", {})
     dxy = tv.get("TVC:DXY", {})
 
-    live_price = round(float(xau.get("close") or 3538.0), 2)
+    gc = download_gold_candles()
+
+    live_price = round(float(xau.get("close") or gc["Close"].iloc[-1]), 2)
     pct_change = round(float(xau.get("change") or 0.0), 2)
     ema20 = round(float(xau.get("EMA20|5") or live_price), 2)
     ema50 = round(float(xau.get("EMA50|5") or live_price), 2)
     rsi_val = round(float(xau.get("RSI") or 50.0), 1)
 
-    # Fetch 5 days of 15m candles and align to Spot XAUUSD price
-    gc = yf.download("GC=F", period="5d", interval="15m", progress=False)
-    if isinstance(gc.columns, pd.MultiIndex):
-        gc.columns = gc.columns.get_level_values(0)
-
+    # Align candles to Spot XAUUSD price
     spread = round(float(gc["Close"].iloc[-1]) - live_price, 2)
     df = gc.copy()
     for col in ["Open", "High", "Low", "Close"]:
@@ -64,7 +82,7 @@ def get_smc_market_data():
     ny_high = round(float(ny_df["High"].max()), 2) if not ny_df.empty else strong_high
     ny_low = round(float(ny_df["Low"].min()), 2) if not ny_df.empty else strong_low
 
-    # 4. Institutional Supply & Demand Order Block Zones (Top 15% & Bottom 15% of dealing range)
+    # 4. Institutional Supply & Demand Order Block Zones (Top 14% & Bottom 14% of dealing range)
     zone_thickness = round(max((strong_high - strong_low) * 0.14, 3.5), 2)
     supply_zone = f"${round(strong_high - zone_thickness, 2)} – ${strong_high}"
     demand_zone = f"${strong_low} – ${round(strong_low + zone_thickness, 2)}"
@@ -155,13 +173,22 @@ def get_smc_market_data():
 def get_usd_fundamental_context():
     """Fetches today's High & Medium impact USD economic calendar events."""
     try:
-        resp = requests.get("https://faireconomy.media", timeout=10)
+        resp = requests.get(
+            "https://faireconomy.media",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10
+        )
         root = ET.fromstring(resp.content)
         today_str = datetime.now(timezone.utc).strftime("%m-%d-%Y")
         events = []
         for ev in root.findall("event"):
-            if ev.findtext("country") == "USD" and ev.findtext("impact") in ("High", "Medium") and ev.findtext("date") == today_str:
+            if (
+                ev.findtext("country") == "USD"
+                and ev.findtext("impact") in ("High", "Medium")
+                and ev.findtext("date") == today_str
+            ):
                 events.append(f"• {ev.findtext('title')} [{ev.findtext('impact')} Impact — {ev.findtext('time')} UTC]")
         return events if events else ["• No major red-folder USD releases today; session liquidity & yields driving flow"]
-    except Exception:
+    except Exception as e:
+        print(f"⚠️ Economic calendar fetch warning: {e}")
         return ["• US Treasury yields & Dollar Index flow driving session volatility"]
