@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import time
 import random
@@ -8,10 +9,10 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-GOOGLE_TOKEN_URL = "https://" + ".".join(["oauth2", "googleapis", "com"]) + "/token"
-FB_GRAPH_BASE = "https://" + ".".join(["graph", "facebook", "com"]) + "/v21.0"
-FB_RUPLOAD_BASE = "https://" + ".".join(["rupload", "facebook", "com"]) + "/video-upload/v21.0"
-TG_API_BASE = "https://" + ".".join(["api", "telegram", "org"]) + "/bot"
+GOOGLE_TOKEN_URL = "https://googleapis.com"
+FB_GRAPH_BASE = "https://facebook.com"
+FB_RUPLOAD_BASE = "https://facebook.com"
+TG_API_BASE = "https://telegram.org"
 
 def post_to_telegram_channel(chart_png_path, mentor_report):
     """Posts the high-res annotated TradingView chart image + mentor analysis to Telegram."""
@@ -28,7 +29,7 @@ def post_to_telegram_channel(chart_png_path, mentor_report):
             data={
                 "chat_id": chat_id,
                 "caption": mentor_report[:1020],
-                "parse_mode": "Markdown"
+                "parse_mode": "HTML"
             },
             files={"photo": img_file},
             timeout=20
@@ -37,11 +38,12 @@ def post_to_telegram_channel(chart_png_path, mentor_report):
     if resp.get("ok"):
         print(f"✅ Telegram Chart & Mentor Analysis Posted to {chat_id}")
     else:
-        # Retry without Markdown parsing if any special character tripped Telegram's parser
+        # Retry without HTML tags if any unclosed tag tripped Telegram's parser
+        plain_caption = re.sub(r"<[^>]+>", "", mentor_report)[:1020]
         with open(chart_png_path, "rb") as img_file:
             retry = requests.post(
                 url,
-                data={"chat_id": chat_id, "caption": mentor_report[:1020]},
+                data={"chat_id": chat_id, "caption": plain_caption},
                 files={"photo": img_file},
                 timeout=20
             ).json()
@@ -77,12 +79,14 @@ def upload_youtube_short(video_path, title, description):
 
 def create_temp_public_url(video_path, release_tag):
     subprocess.run(["gh", "release", "delete", release_tag, "-y"], stderr=subprocess.DEVNULL)
-    subprocess.run(["gh", "release", "create", release_tag, video_path, "--title", "FR6FX Media", "--notes", "Auto"], check=True)
+    subprocess.run(
+        ["gh", "release", "create", release_tag, video_path, "--title", "FR6FX Media", "--notes", "Auto"],
+        check=True
+    )
     time.sleep(5)
     repo = os.environ["GITHUB_REPOSITORY"]
     fname = os.path.basename(video_path)
-    gh_host = ".".join(["github", "com"])
-    return f"https://{gh_host}/{repo}/releases/download/{release_tag}/{fname}"
+    return f"https://github.com{repo}/releases/download/{release_tag}/{fname}"
 def upload_instagram_reel(video_url, caption):
     ig_id = os.environ["IG_USER_ID"].strip()
     token = os.environ["META_ACCESS_TOKEN"].strip()
