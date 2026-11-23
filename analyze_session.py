@@ -485,18 +485,19 @@ def generate_ai_analysis(smc, news, session_name, played_out):
             except Exception as e:
                 print(f"⚠️ {model_name} busy: {e}")
 
-    # Tier 2: Groq Free API (Ultra-fast Llama 3.3 70B JSON)
+        # Tier 2: Groq Free API (Ultra-fast Llama 3.3 70B JSON)
     if not result and os.environ.get("GROQ_API_KEY"):
         try:
             g_resp = req_ai.post(
                 "https://groq.com",
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('GROQ_API_KEY')}",
-                    "Content-Type": "application/json"
+                    "Authorization": f"Bearer {os.environ.get('GROQ_API_KEY').strip()}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0"
                 },
                 json={
                     "model": "llama-3.3-70b-versatile",
-                    "messages": ({"role": "user", "content": prompt},),
+                    "messages": list(({"role": "user", "content": prompt},)),
                     "response_format": {"type": "json_object"},
                     "temperature": 0.35
                 },
@@ -516,14 +517,15 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     if not result and os.environ.get("GITHUB_TOKEN"):
         try:
             gh_resp = req_ai.post(
-                "https://azure.com",
+                "https://github.ai",
                 headers={
-                    "Authorization": f"Bearer {os.environ.get('GITHUB_TOKEN')}",
-                    "Content-Type": "application/json"
+                    "Authorization": f"Bearer {os.environ.get('GITHUB_TOKEN').strip()}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/vnd.github+json"
                 },
                 json={
-                    "model": "gpt-4o-mini",
-                    "messages": ({"role": "user", "content": prompt},),
+                    "model": "openai/gpt-4o-mini",
+                    "messages": list(({"role": "user", "content": prompt},)),
                     "response_format": {"type": "json_object"},
                     "temperature": 0.35
                 },
@@ -538,7 +540,6 @@ def generate_ai_analysis(smc, news, session_name, played_out):
                 print(f"⚠️ GitHub Models status {gh_resp.status_code}")
         except Exception as e:
             print(f"⚠️ GitHub Models fallback warning: {e}")
-
     # Tier 4: Built-in Mentor Fallback (100% offline-safe)
     if result:
         result.update({"spoken_script": clean_spoken_text(result.get("spoken_script", ""))})
