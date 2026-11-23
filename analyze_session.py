@@ -12,13 +12,15 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from datetime import datetime, timezone
+from playwright.async_api import async_playwright
 from google import genai
 from google.genai import types
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from smc_engine import get_smc_market_data, get_usd_fundamental_context
 from seo_engine import build_seo_package
 
 MEMORY_FILE = "predictions.json"
+FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 def detect_session():
     utc_hour = datetime.now(timezone.utc).hour
@@ -78,6 +80,108 @@ def check_previous_call_played_out(smc):
 
     return outcome
 
+def overlay_smc_hud_on_chart(png_path, tf_label, smc):
+    img = Image.open(png_path).convert("RGB").resize((1080, 1000), Image.Resampling.LANCZOS)
+    draw = ImageDraw.Draw(img, "RGBA")
+    try:
+        f_tag = ImageFont.truetype(FONT_BOLD, 21)
+        f_sm = ImageFont.truetype(FONT_BOLD, 18)
+    except Exception:
+        f_tag = ImageFont.load_default()
+        f_sm = ImageFont.load_default()
+
+    draw.rounded_rectangle((16, 14, 480, 56), radius=10, fill=(11, 16, 27, 225), outline=(56, 189, 248, 220), width=2)
+    draw.text((28, 23), f"XAUUSD | {tf_label} | FR6 FX DESK", fill=(248, 250, 252, 255), font=f_tag)
+
+    struct_txt = str(smc.get("structure_tag", ""))
+    if struct_txt:
+        draw.rounded_rectangle((16, 64, 520, 102), radius=8, fill=(15, 23, 42, 215), outline=(245, 158, 11, 200), width=1)
+        draw.text((26, 73), f"STRUCTURE: {struct_txt}", fill=(253, 224, 71, 255), font=f_sm)
+
+    img.save(png_path)
+async def capture_real_tradingview_charts(smc):
+    chart_url = os.environ.get("TRADINGVIEW_CHART_URL", "").strip()
+    if not chart_url:
+        chart_url = "https://tradingview.com"
+    session_id = os.environ.get("TRADINGVIEW_SESSION_ID", "").strip()
+    session_sign = os.environ.get("TRADINGVIEW_SESSION_SIGN", "").strip()
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=("--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled")
+        )
+        context = await browser.new_context(
+            viewport={"width": 540, "height": 500},
+            device_scale_factor=2,
+            color_scheme="dark",
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        )
+
+        if session_id:
+            cookies = list((
+                {
+                    "name": "sessionid",
+                    "value": session_id,
+                    "domain": ".tradingview.com",
+                    "path": "/",
+                    "httpOnly": True,
+                    "secure": True,
+                    "sameSite": "Lax"
+                },
+            ))
+            if session_sign:
+                cookies.append({
+                    "name": "sessionid_sign",
+                    "value": session_sign,
+                    "domain": ".tradingview.com",
+                    "path": "/",
+                    "httpOnly": True,
+                    "secure": True,
+                    "sameSite": "Lax"
+                })
+            await context.add_cookies(cookies)
+            print("🔐 Authenticated TradingView session cookie injected.")
+
+        page = await context.new_page()
+        await page.goto(chart_url, wait_until="domcontentloaded", timeout=45000)
+        await page.wait_for_timeout(6500)
+
+        for esc_try in range(3):
+            await page.keyboard.press("Escape")
+            await page.wait_for_timeout(300)
+
+        await page.evaluate("""() => {
+            const selectors = (
+                'div[data-name="legend-delete-action"]',
+                'div[class*="toast"]',
+                'div[class*="banner"]',
+                'div[class*="popup"]',
+                'button[aria-label="Close"]'
+            );
+            for (const sel of selectors) {
+                document.querySelectorAll(sel).forEach(el => {
+                    if (el && el.offsetHeight < 220) el.style.display = 'none';
+                });
+            }
+        }""")
+
+        for tf_code, tf_label, out_png in (("15", "15M", "assets/tv_15m.png"), ("5", "5M", "assets/tv_5m.png")):
+            await page.mouse.click(270, 250)
+            await page.wait_for_timeout(300)
+            await page.keyboard.type(tf_code, delay=80)
+            await page.wait_for_timeout(250)
+            await page.keyboard.press("Enter")
+            await page.wait_for_timeout(2500)
+            await page.keyboard.press("Alt+r")
+            await page.wait_for_timeout(1200)
+            await page.screenshot(path=out_png, full_page=False)
+            overlay_smc_hud_on_chart(out_png, tf_label, smc)
+            print(f"📸 Real TradingView {tf_label} Retina chart captured -> {out_png}")
+
+        await browser.close()
+        return True
+
 def fetch_tf_candles(interval, live_price):
     period = "2d" if interval == "5m" else "5d"
     for ticker in ("GC=F", "XAUUSD=X"):
@@ -86,7 +190,7 @@ def fetch_tf_candles(interval, live_price):
             if df is not None and not df.empty and len(df) >= 35:
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.get_level_values(0)
-                df = df.tail(46).copy()
+                df = df.tail(42).copy()
                 last_close = float(df.get("Close").iloc.__getitem__(len(df) - 1))
                 spread = last_close - float(live_price)
                 for col in ("Open", "High", "Low", "Close"):
@@ -97,70 +201,71 @@ def fetch_tf_candles(interval, live_price):
         except Exception as e:
             print(f"⚠️ {ticker} ({interval}) fetch warning: {e}")
     raise RuntimeError(f"Could not fetch {interval} candles.")
-def render_pro_chart_image(df, tf_label, smc, out_png_path, visible_count=None):
-    if visible_count is None:
-        visible_count = len(df)
-
-    fig, ax = plt.subplots(figsize=(9.6, 8.6), dpi=125)
+def render_fallback_chart_image(df, tf_label, smc, out_png_path):
+    fig, ax = plt.subplots(figsize=(8.64, 8.0), dpi=125)
     bg_color = "#0b101b"
     fig.patch.set_facecolor(bg_color)
     ax.set_facecolor(bg_color)
 
-    sl = slice(0, visible_count)
-    opens = df.get("Open").values.__getitem__(sl)
-    highs = df.get("High").values.__getitem__(sl)
-    lows = df.get("Low").values.__getitem__(sl)
-    closes = df.get("Close").values.__getitem__(sl)
-    ema20 = df.get("EMA20").values.__getitem__(sl)
-    ema50 = df.get("EMA50").values.__getitem__(sl)
+    opens = df.get("Open").values
+    highs = df.get("High").values
+    lows = df.get("Low").values
+    closes = df.get("Close").values
+    ema20 = df.get("EMA20").values
+    ema50 = df.get("EMA50").values
     n_total = len(df)
-    x = np.arange(visible_count)
-
-    c_low = float(df.get("Low").min())
-    c_high = float(df.get("High").max())
-    c_span = max(c_high - c_low, 8.0)
-    y_min = c_low - c_span * 0.14
-    y_max = c_high + c_span * 0.16
+    x = np.arange(n_total)
 
     sup_high = float(smc.get("strong_high"))
     sup_low = float(smc.get("retest_res"))
     dem_low = float(smc.get("strong_low"))
     dem_high = float(smc.get("retest_sup"))
     eq_price = float(smc.get("equilibrium"))
-    live_p = float(closes.__getitem__(visible_count - 1))
+    live_p = float(closes.__getitem__(n_total - 1))
 
-    vis_sup_top = min(sup_high, y_max - c_span * 0.015)
-    vis_sup_bot = max(min(sup_low, vis_sup_top - c_span * 0.07), y_max - c_span * 0.13)
+    c_low = min(float(df.get("Low").min()), dem_low)
+    c_high = max(float(df.get("High").max()), sup_high)
+    c_span = max(c_high - c_low, 8.0)
+    y_min = c_low - c_span * 0.08
+    y_max = c_high + c_span * 0.11
+
     ax.add_patch(patches.Rectangle(
-        (-1, vis_sup_bot), n_total + 8, vis_sup_top - vis_sup_bot,
+        (-1, sup_low), n_total + 8, max(sup_high - sup_low, c_span * 0.04),
         linewidth=1.2, edgecolor="#ef4444", facecolor="#ef4444", alpha=0.22, zorder=1
     ))
     ax.text(
-        0.3, vis_sup_top - c_span * 0.012,
-        f"SUPPLY ZONE  ${sup_low:.1f} - ${sup_high:.1f}",
+        0.3, sup_high - c_span * 0.008,
+        f"SUPPLY  ${sup_low:.1f} - ${sup_high:.1f}",
         color="#fca5a5", fontsize=9.5, fontweight="bold", va="top", zorder=6
     )
 
-    vis_dem_bot = max(dem_low, y_min + c_span * 0.015)
-    vis_dem_top = min(max(dem_high, vis_dem_bot + c_span * 0.07), y_min + c_span * 0.13)
     ax.add_patch(patches.Rectangle(
-        (-1, vis_dem_bot), n_total + 8, vis_dem_top - vis_dem_bot,
+        (-1, dem_low), n_total + 8, max(dem_high - dem_low, c_span * 0.04),
         linewidth=1.2, edgecolor="#06b6d4", facecolor="#06b6d4", alpha=0.22, zorder=1
     ))
     ax.text(
-        0.3, vis_dem_bot + c_span * 0.012,
-        f"DEMAND ZONE  ${dem_low:.1f} - ${dem_high:.1f}",
+        0.3, dem_low + c_span * 0.008,
+        f"DEMAND  ${dem_low:.1f} - ${dem_high:.1f}",
         color="#67e8f9", fontsize=9.5, fontweight="bold", va="bottom", zorder=6
     )
 
-    if y_min < eq_price < y_max:
-        ax.axhline(eq_price, color="#f59e0b", linestyle=":", linewidth=1.6, alpha=0.95, zorder=2)
-        ax.text(
-            0.3, eq_price + c_span * 0.012, f"50% EQ  ${eq_price:.2f}",
-            color="#fcd34d", fontsize=8.8, fontweight="bold", va="bottom", zorder=6
-        )
+    fvg_type = str(smc.get("fvg_type", "NONE"))
+    fvg_top = float(smc.get("fvg_top", 0.0))
+    fvg_bot = float(smc.get("fvg_bottom", 0.0))
+    if fvg_type in ("BULLISH", "BEARISH") and fvg_top > fvg_bot:
+        fvg_col = "#22c55e" if fvg_type == "BULLISH" else "#f97316"
+        ax.add_patch(patches.Rectangle(
+            (max(n_total - 18, 0), fvg_bot), 24, fvg_top - fvg_bot,
+            linewidth=1.0, edgecolor=fvg_col, facecolor=fvg_col, alpha=0.18, zorder=1
+        ))
 
-    for i in range(visible_count):
+    ax.axhline(eq_price, color="#f59e0b", linestyle=":", linewidth=1.6, alpha=0.95, zorder=2)
+    ax.text(
+        0.3, eq_price + c_span * 0.01, f"50% EQ  ${eq_price:.2f}",
+        color="#fcd34d", fontsize=8.8, fontweight="bold", va="bottom", zorder=6
+    )
+
+    for i in range(n_total):
         c_val = closes.__getitem__(i)
         o_val = opens.__getitem__(i)
         h_val = highs.__getitem__(i)
@@ -171,11 +276,12 @@ def render_pro_chart_image(df, tf_label, smc, out_png_path, visible_count=None):
         wick_col = "#2ed573" if is_up else "#ff6b81"
         ax.plot((x_val, x_val), (l_val, h_val), color=wick_col, linewidth=1.8, zorder=3)
         b_bot = min(o_val, c_val)
-        b_h = max(abs(c_val - o_val), c_span * 0.014)
+        b_h = max(abs(c_val - o_val), c_span * 0.012)
         ax.bar(
-            x_val, b_h, bottom=b_bot, width=0.74,
+            x_val, b_h, bottom=b_bot, width=0.72,
             color=body_col, edgecolor=body_col, linewidth=1.0, zorder=4
         )
+
     ax.plot(x, ema20, color="#3b82f6", linewidth=2.2, label="EMA 20", zorder=5)
     ax.plot(x, ema50, color="#f97316", linewidth=2.2, label="EMA 50", zorder=5)
 
@@ -187,20 +293,7 @@ def render_pro_chart_image(df, tf_label, smc, out_png_path, visible_count=None):
         zorder=7
     )
 
-    ax.text(
-        0.015, 0.975, f"XAUUSD | {tf_label} | INSTITUTIONAL SMC",
-        transform=ax.transAxes, color="#f1f5f9", fontsize=10.5, fontweight="bold", va="top",
-        bbox=dict(boxstyle="round,pad=0.32", facecolor="#131c2e", edgecolor="#2a3954"),
-        zorder=7
-    )
-    ax.text(
-        0.5, 0.5, "FR6 FX",
-        transform=ax.transAxes, color="#ffffff", alpha=0.05,
-        fontsize=68, fontweight="bold", ha="center", va="center", zorder=1
-    )
-
     ax.yaxis.tick_right()
-    ax.yaxis.set_label_position("right")
     ax.tick_params(axis="y", colors="#e2e8f0", labelsize=10.5)
     ax.tick_params(axis="x", colors="#64748b", labelsize=9)
     ax.grid(True, color="#192338", linestyle="-", linewidth=0.7, alpha=0.85)
@@ -217,52 +310,51 @@ def render_pro_chart_image(df, tf_label, smc, out_png_path, visible_count=None):
         ax.spines.get(spine).set_color("#2a3954")
 
     ax.set_ylim(y_min, y_max)
-    ax.set_xlim(-1, n_total + 6.0)
+    ax.set_xlim(-1, n_total + 6.5)
 
-    leg = ax.legend(loc="upper right", frameon=True, facecolor="#131c2e", edgecolor="#2a3954", fontsize=9.5)
+    leg = ax.legend(loc="lower right", frameon=True, facecolor="#131c2e", edgecolor="#2a3954", fontsize=9.5)
     for text in leg.get_texts():
         text.set_color("#f8fafc")
 
-    plt.subplots_adjust(left=0.015, right=0.885, top=0.98, bottom=0.055)
+    plt.subplots_adjust(left=0.015, right=0.88, top=0.985, bottom=0.05)
     plt.savefig(out_png_path, facecolor=bg_color, dpi=125)
     plt.close(fig)
+    overlay_smc_hud_on_chart(out_png_path, tf_label, smc)
 
-def build_live_candle_clip(df, tf_label, smc, out_webm_path):
-    frame_dir = f"assets/frames_{tf_label}"
-    os.makedirs(frame_dir, exist_ok=True)
-    n_total = len(df)
-    start_c = max(n_total - 11, 20)
-    frame_idx = 0
-
-    for c in range(start_c, n_total + 1):
-        png_f = os.path.join(frame_dir, f"f_{frame_idx:03d}.png")
-        render_pro_chart_image(df, tf_label, smc, png_f, visible_count=c)
-        frame_idx += 1
-
-    last_png = os.path.join(frame_dir, f"f_{frame_idx - 1:03d}.png")
-    for _ in range(6):
-        png_f = os.path.join(frame_dir, f"f_{frame_idx:03d}.png")
-        Image.open(last_png).save(png_f)
-        frame_idx += 1
-
+def build_motion_clip_from_png(png_path, out_webm_path):
     cmd = (
-        "ffmpeg", "-y", "-framerate", "1", "-i", os.path.join(frame_dir, "f_%03d.png"),
-        "-vf", "scale=960:860,fps=30",
-        "-t", "18", "-c:v", "libvpx-vp9", "-b:v", "2000k", "-an", out_webm_path
+        "ffmpeg", "-y", "-loop", "1", "-t", "22", "-i", png_path,
+        "-vf", "scale=1134:1050,zoompan=z='min(zoom+0.0008,1.05)':d=660:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1000:fps=30",
+        "-c:v", "libvpx-vp9", "-b:v", "2400k", "-an", out_webm_path
     )
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 async def capture_tradingview_charts(smc):
     os.makedirs("assets", exist_ok=True)
-    df_15 = fetch_tf_candles("15m", smc.get("live_price"))
-    df_5 = fetch_tf_candles("5m", smc.get("live_price"))
+    captured_live = False
+    try:
+        captured_live = await capture_real_tradingview_charts(smc)
+    except Exception as e:
+        print(f"⚠️ Real TradingView capture fallback triggered: {e}")
 
-    render_pro_chart_image(df_15, "15M", smc, "assets/tv_15m.png")
-    render_pro_chart_image(df_5, "5M", smc, "assets/tv_5m.png")
+    if not captured_live:
+        df_15 = fetch_tf_candles("15m", smc.get("live_price"))
+        df_5 = fetch_tf_candles("5m", smc.get("live_price"))
+        render_fallback_chart_image(df_15, "15M", smc, "assets/tv_15m.png")
+        render_fallback_chart_image(df_5, "5M", smc, "assets/tv_5m.png")
 
-    build_live_candle_clip(df_15, "15M", smc, "assets/tv_15m.webm")
-    build_live_candle_clip(df_5, "5M", smc, "assets/tv_5m.webm")
-    print("✅ Full-height 15M & 5M candlestick charts with exact Y-axis SMC zones rendered.")
+    build_motion_clip_from_png("assets/tv_15m.png", "assets/tv_15m.webm")
+    build_motion_clip_from_png("assets/tv_5m.png", "assets/tv_5m.webm")
+    print("✅ 1080x1000 Retina 15M & 5M charts + smooth motion clips ready.")
+def clean_spoken_text(raw_text):
+    txt = re.sub(r"\$(\d+)\.\d+", r"\1", str(raw_text))
+    txt = txt.replace("$", "")
+    txt = txt.replace("Buy-side", "Buy side").replace("buy-side", "buy side")
+    txt = txt.replace("Sell-side", "Sell side").replace("sell-side", "sell side")
+    txt = txt.replace("FVG", "fair value gap")
+    txt = txt.replace("BOS", "break of structure").replace("CHoCH", "change of character")
+    return txt
+
 def generate_ai_analysis(smc, news, session_name, played_out):
     client = genai.Client(
         api_key=os.environ.get("GEMINI_API_KEY"),
@@ -293,6 +385,8 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     pct_c = smc.get("pct_change")
     pdh = smc.get("pdh")
     pdl = smc.get("pdl")
+    m_high = smc.get("macro_high")
+    m_low = smc.get("macro_low")
     a_low = smc.get("asia_low")
     a_high = smc.get("asia_high")
     l_low = smc.get("london_low")
@@ -307,6 +401,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     ret_res = smc.get("retest_res")
     ret_sup = smc.get("retest_sup")
     fvg = smc.get("fvg_note")
+    struct_t = smc.get("structure_tag")
     pa_sig = smc.get("pa_signal")
     ema20 = smc.get("ema20")
     ema50 = smc.get("ema50")
@@ -314,23 +409,24 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     dxy_b = smc.get("dxy_bias")
     bias_l = smc.get("bias_label")
     bias_s = smc.get("bias_score")
+
     prompt = f"""
     You are the head Smart Money Concepts (SMC) mentor for @FR6FX.
     Generate BOTH:
-    1. A calm, authoritative 42-second vertical video script ('spoken_script') for YouTube/Instagram/Facebook Reels.
+    1. A calm, authoritative 40-second vertical video script ('spoken_script') for YouTube/Instagram/Facebook Reels.
     2. A deep, mentor-style written analysis ('telegram_report') to post right underneath our annotated TradingView chart image in our Telegram channel ({tg_link}).
 
     EXACT LIVE TECHNICAL & SESSION DATA:
     - Session: {session_name} ({today_label})
     - Live Gold Price: ${live_p} ({pct_c}%)
-    - Previous Day High (PDH): ${pdh} | Previous Day Low (PDL): ${pdl}
+    - 24H Macro Range: ${m_low} - ${m_high} | PDH: ${pdh} | PDL: ${pdl}
     - Asian Session Range: ${a_low} - ${a_high}
     - London Session Range: ${l_low} - ${l_high}
     - New York Session Range: ${n_low} - ${n_high}
-    - Institutional Supply Zone (Resistance): {sup_z} (Strong High: ${s_high})
-    - 50% Equilibrium Pivot: ${eq}
-    - Institutional Demand Zone (Support): {dem_z} (Strong Low: ${s_low})
-    - Retest Zones: Resistance Retest ${ret_res} | Support Retest ${ret_sup}
+    - Active Intraday Supply Zone: {sup_z} (Strong High: ${s_high})
+    - 50% Intraday Equilibrium: ${eq}
+    - Active Intraday Demand Zone: {dem_z} (Strong Low: ${s_low})
+    - Market Structure: {struct_t}
     - Fair Value Gap: {fvg}
     - Liquidity & Price Action Read: {pa_sig}
     - 5m EMA 20: ${ema20} | 5m EMA 50: ${ema50} | RSI(14): {rsi}
@@ -339,27 +435,26 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     - Fundamental USD News Today:
     {news_block}
 
-    RULES FOR 'spoken_script' (Reels Voiceover, ~95 words):
-    - Write numbers cleanly without decimals (e.g. "thirty-six nineteen" instead of "$3619.60", and "one-oh-four" for DXY).
-    - ALWAYS spell out "fair value gap" instead of "FVG" and write "buy side liquidity" with a space so speech recognition transcribes it accurately.
-    - Cover the live session price action, liquidity sweep/rejection ({pa_sig}), Supply & Demand zones, and DXY impact.
-    - Include this exact natural CTA near the end: "Join our free Telegram channel in the bio or description for full chart markups and live news alerts, and comment your bias below."
+    RULES FOR 'spoken_script' (Reels Voiceover, ~90 words):
+    - Start with the 15 minute chart structure and session liquidity ({pa_sig}), then transition cleanly to the 5 minute chart entry confirmation around Supply ({int(float(ret_res))} to {int(float(s_high))}) and Demand ({int(float(s_low))}).
+    - Write ALL numbers as clean whole integers without decimals or dollar signs (e.g. "3612" instead of "$3612.30") so captions never split decimals.
+    - Spell out "fair value gap", "break of structure", and "buy side liquidity" with spaces.
+    - End with this exact CTA: "Join our free Telegram channel in the bio or description for full chart markups and live news alerts, and comment your bias below."
 
     RULES FOR 'telegram_report' (Mentor-style standalone Telegram post, 1,200-1,800 characters using HTML tags <b> and <i> only, NO asterisks):
-    - Act like a patient, disciplined mentor teaching your community how to read the chart.
     - Include sections with clean emojis:
-      1. 📊 SESSION CONTEXT & SESSION HIGHS/LOWS (Asia, London, NY, PDH/PDL)
-      2. 💧 LIQUIDITY, SWEEPS & FAIR VALUE GAP ({pa_sig} & {fvg})
-      3. 🎯 SUPPLY, DEMAND & RETEST ZONES TO WATCH
-      4. 💵 DXY MACRO & UPCOMING USD NEWS
-      5. 🧠 MENTOR GAMEPLAN & NEXT SCENARIOS (Bullish vs Bearish invalidation rules, educational only)
+      1. 📊 SESSION CONTEXT & LIQUIDITY LEVELS (Asia, London, NY, PDH/PDL, 24H Macro Range)
+      2. 💧 MARKET STRUCTURE, SWEEPS & FAIR VALUE GAP ({struct_t}, {pa_sig}, {fvg})
+      3. 🎯 INTRADAY SUPPLY, DEMAND & RETEST ZONES
+      4. 💵 DXY MACRO & TODAY'S USD ECONOMIC CALENDAR
+      5. 🧠 MENTOR EXECUTION GAMEPLAN (Bullish vs Bearish confirmation & invalidation rules)
     {recap_prompt}
 
     Return ONLY valid JSON:
     {{
       "date_label": "{today_label}",
       "session": "{session_name}",
-      "spoken_script": "Full 42-second phonetic voiceover script including free Telegram CTA",
+      "spoken_script": "Full 40-second clean numeric voiceover script including free Telegram CTA",
       "youtube_title": "XAUUSD {session_name.title()} Smart Money Analysis ({today_label}) | Gold Supply & Demand #Shorts",
       "social_caption": "Clean Reels caption with Supply/Demand levels, DXY bias, FREE TELEGRAM LINK (https://{tg_link}), Follow @FR6FX CTA, and educational disclaimer",
       "telegram_report": "Complete mentor-style Telegram chart breakdown (1,200-1,800 characters) using HTML bold/italic tags",
@@ -367,7 +462,6 @@ def generate_ai_analysis(smc, news, session_name, played_out):
       "recap_spoken_script": ""
     }}
     """
-
     models_to_try = ("gemini-2.5-flash", "gemini-2.5-flash-lite")
     response = None
 
@@ -379,37 +473,35 @@ def generate_ai_analysis(smc, news, session_name, played_out):
                     contents=(prompt, img_15m, img_5m),
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
-                        temperature=0.4
+                        temperature=0.35
                     )
                 )
                 if response and response.text:
                     break
             except Exception as e:
-                print(f"⚠️ {model_name} attempt {attempt+1} busy: {e}")
+                print(f"⚠️ {model_name} attempt {attempt + 1} busy: {e}")
                 time.sleep(5)
         if response and response.text:
             print(f"✅ AI Mentor analysis generated using {model_name}")
             break
+
     if response and response.text:
         result = json.loads(response.text)
+        result.update({"spoken_script": clean_spoken_text(result.get("spoken_script", ""))})
     else:
-        print("🔄 Gemini busy-using built-in Mentor fallback analysis...")
-        dxy_val = float(smc.get("dxy_now"))
-        dxy_spoken = f"{dxy_val:.1f}".replace(".0", "")
+        print("🔄 Gemini busy—using built-in Mentor fallback analysis...")
+        dxy_val = int(round(float(smc.get("dxy_now"))))
         dxy_dir = "pushing higher" if "Bullish" in str(dxy_b) else "pulling back"
-        clean_pa = re.sub(r"\$(\d+)\.\d+", r"\1", str(pa_sig))
-        clean_pa = clean_pa.replace("Buy-side", "Buy side").replace("buy-side", "buy side")
-        clean_pa = clean_pa.replace("Sell-side", "Sell side").replace("sell-side", "sell side")
-        clean_pa = clean_pa.replace("FVG", "fair value gap")
+        clean_pa = clean_spoken_text(pa_sig)
 
         result = {
             "date_label": today_label,
             "session": session_name,
             "spoken_script": (
-                f"Gold is trading near {int(float(live_p))} heading into the {session_name} with a {str(bias_l).lower()}. "
-                f"Looking at session liquidity, {clean_pa}. "
-                f"Institutional supply sits between {int(float(ret_res))} and {int(float(s_high))}, while demand support rests near {int(float(s_low))}. "
-                f"With the dollar index {dxy_dir} around {dxy_spoken}, wait for a clean sweep and retest before confirming entries. "
+                f"On the 15 minute chart, Gold is trading near {int(round(float(live_p)))} heading into the {session_name} with a {str(bias_l).lower()}. "
+                f"{clean_pa}. "
+                f"Dropping down to the 5 minute chart, institutional supply sits between {int(round(float(ret_res)))} and {int(round(float(s_high)))}, while demand support rests near {int(round(float(s_low)))}. "
+                f"With the dollar index {dxy_dir} around {dxy_val}, wait for a clean sweep and five minute structure shift before confirming entries. "
                 f"Join our free Telegram channel in the bio or description for full chart markups and live news alerts, and comment your bias below."
             ),
             "youtube_title": f"XAUUSD {session_name.title()} Smart Money Analysis ({today_label}) | Gold Supply & Demand #Shorts",
@@ -418,6 +510,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
                 f"🔴 Supply Zone: {sup_z}\n"
                 f"⚖️ 50% Equilibrium: ${eq}\n"
                 f"🔵 Demand Zone: {dem_z}\n"
+                f"📐 Structure: {struct_t}\n"
                 f"💧 Liquidity Read: {pa_sig}\n"
                 f"💵 DXY Impact: {dxy_b}\n\n"
                 f"📲 Join Free Telegram for Full Chart Markups & News Alerts: https://{tg_link}\n"
@@ -427,18 +520,20 @@ def generate_ai_analysis(smc, news, session_name, played_out):
             "telegram_report": (
                 f"🟡 <b>FR6 FX MENTOR BRIEF — XAUUSD ({session_name})</b>\n"
                 f"💰 Live Spot: <b>${live_p}</b> ({bias_l})\n\n"
-                f"📍 <b>Session & Daily Liquidity:</b>\n"
+                f"📍 <b>Session & Macro Liquidity:</b>\n"
+                f"• 24H Macro Range: ${m_low} - ${m_high}\n"
                 f"• PDH / PDL: ${pdh} / ${pdl}\n"
                 f"• Asia Range: ${a_low} - ${a_high}\n"
                 f"• London Range: ${l_low} - ${l_high}\n\n"
-                f"💧 <b>Price Action & Imbalance:</b>\n"
+                f"💧 <b>Structure, Sweeps & Imbalance:</b>\n"
+                f"• {struct_t}\n"
                 f"• {pa_sig}\n"
                 f"• {fvg}\n\n"
-                f"🎯 <b>Zones to Watch:</b>\n"
+                f"🎯 <b>Intraday Zones to Watch:</b>\n"
                 f"• 🔴 Supply Cap: {sup_z} (Retest: ${ret_res})\n"
                 f"• ⚖️ 50% Equilibrium: ${eq}\n"
                 f"• 🔵 Demand Floor: {dem_z} (Retest: ${ret_sup})\n\n"
-                f"📰 <b>DXY & USD Fundamentals:</b>\n"
+                f"📰 <b>DXY & Today's USD Calendar:</b>\n"
                 f"• DXY: {dxy_b}\n"
                 f"{news_block}\n\n"
                 f"🧠 <b>Mentor Rule:</b> Never chase mid-range candles. Wait for a liquidity sweep into Supply/Demand + 5m structure shift.\n"
@@ -450,7 +545,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
 
     result.update({"smc": smc, "seo": build_seo_package(smc, news, session_name, result)})
 
-    history = []
+    history = list()
     if os.path.exists(MEMORY_FILE):
         with open(MEMORY_FILE, "r") as f:
             history = json.load(f)
@@ -478,7 +573,7 @@ def generate_ai_analysis(smc, news, session_name, played_out):
             "evaluated": False
         })
     else:
-        print("ℹ️ Levels unchanged from last open call-skipping duplicate prediction log.")
+        print("ℹ️ Levels unchanged from last open call—skipping duplicate prediction log.")
 
     keep_from = max(0, len(history) - 15)
     recent_history = list(history).__getitem__(slice(keep_from, None))
