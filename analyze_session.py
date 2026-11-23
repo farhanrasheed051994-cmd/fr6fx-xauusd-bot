@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import time
 import asyncio
@@ -9,6 +10,7 @@ import yfinance as yf
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 from datetime import datetime, timezone
 from google import genai
 from google.genai import types
@@ -77,15 +79,15 @@ def check_previous_call_played_out(smc):
     return outcome
 
 def fetch_tf_candles(interval, live_price):
-    """Fetches 5m or 15m Gold candles and calibrates them to live OANDA:XAUUSD spot price."""
+    """Fetches 5m or 15m Gold candles calibrated to exact OANDA:XAUUSD spot price."""
     period = "2d" if interval == "5m" else "5d"
     for ticker in ["GC=F", "XAUUSD=X"]:
         try:
             df = yf.download(ticker, period=period, interval=interval, progress=False)
-            if df is not None and not df.empty and len(df) >= 30:
+            if df is not None and not df.empty and len(df) >= 35:
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.get_level_values(0)
-                df = df.tail(75).copy()
+                df = df.tail(48).copy()
                 spread = float(df["Close"].iloc[-1]) - float(live_price)
                 for c in ["Open", "High", "Low", "Close"]:
                     df[c] = df[c] - spread
@@ -94,63 +96,103 @@ def fetch_tf_candles(interval, live_price):
                 return df
         except Exception as e:
             print(f"⚠️ {ticker} ({interval}) fetch warning: {e}")
-    raise RuntimeError(f"Could not fetch {interval} candles for chart rendering.")
+    raise RuntimeError(f"Could not fetch {interval} candles.")
 
-def render_pro_chart_image(df, tf_label, smc, out_png_path):
-    """Renders a crisp TradingView-style dark institutional candlestick chart (940x800)."""
-    fig, ax = plt.subplots(figsize=(9.4, 8.0), dpi=100)
-    bg_color = "#0d121d"
+def render_pro_chart_image(df, tf_label, smc, out_png_path, visible_count=None):
+    """Renders an ultra-crisp institutional SMC candlestick chart with exact Y-axis zone boxes."""
+    if visible_count is None:
+        visible_count = len(df)
+
+    fig, ax = plt.subplots(figsize=(9.6, 8.6), dpi=125)
+    bg_color = "#0b101b"
     fig.patch.set_facecolor(bg_color)
     ax.set_facecolor(bg_color)
 
-    opens = df["Open"].values
-    highs = df["High"].values
-    lows = df["Low"].values
-    closes = df["Close"].values
-    ema20 = df["EMA20"].values
-    ema50 = df["EMA50"].values
-    x = np.arange(len(df))
+    opens = df["Open"].values[:visible_count]
+    highs = df["High"].values[:visible_count]
+    lows = df["Low"].values[:visible_count]
+    closes = df["Close"].values[:visible_count]
+    ema20 = df["EMA20"].values[:visible_count]
+    ema50 = df["EMA50"].values[:visible_count]
+    n_total = len(df)
+    x = np.arange(visible_count)
 
-    for i in range(len(df)):
+    sup_high = float(smc["strong_high"])
+    sup_low = float(smc["retest_res"])
+    dem_low = float(smc["strong_low"])
+    dem_high = float(smc["retest_sup"])
+    eq_price = float(smc["equilibrium"])
+    live_p = float(closes[-1])
+
+    sup_rect = patches.Rectangle(
+        (-1, sup_low), n_total + 8, max(sup_high - sup_low, 1.5),
+        linewidth=1.0, edgecolor="#ef4444", facecolor="#ef4444", alpha=0.16, zorder=1
+    )
+    ax.add_patch(sup_rect)
+    ax.text(
+        0.2, sup_high - 0.4, f"SUPPLY ZONE  ${sup_low:.1f} – ${sup_high:.1f}",
+        color="#fca5a5", fontsize=8.5, fontweight="bold", va="top", zorder=6
+    )
+
+    dem_rect = patches.Rectangle(
+        (-1, dem_low), n_total + 8, max(dem_high - dem_low, 1.5),
+        linewidth=1.0, edgecolor="#06b6d4", facecolor="#06b6d4", alpha=0.16, zorder=1
+    )
+    ax.add_patch(dem_rect)
+    ax.text(
+        0.2, dem_low + 0.4, f"DEMAND ZONE  ${dem_low:.1f} – ${dem_high:.1f}",
+        color="#67e8f9", fontsize=8.5, fontweight="bold", va="bottom", zorder=6
+    )
+
+    ax.axhline(eq_price, color="#f59e0b", linestyle=":", linewidth=1.3, alpha=0.9, zorder=2)
+    ax.text(
+        0.2, eq_price + 0.35, f"50% EQ  ${eq_price:.2f}",
+        color="#fcd34d", fontsize=8.0, fontweight="bold", va="bottom", zorder=6
+    )
+
+    for i in range(visible_count):
         is_up = closes[i] >= opens[i]
-        color = "#089981" if is_up else "#f23645"
-        ax.plot([x[i], x[i]], [lows[i], highs[i]], color=color, linewidth=1.2, zorder=2)
-        body_bottom = min(opens[i], closes[i])
-        body_height = max(abs(closes[i] - opens[i]), 0.15)
+        body_col = "#00c896" if is_up else "#ff4757"
+        wick_col = "#2ed573" if is_up else "#ff6b81"
+        ax.plot([x[i], x[i]], [lows[i], highs[i]], color=wick_col, linewidth=1.5, zorder=3)
+        b_bot = min(opens[i], closes[i])
+        b_h = max(abs(closes[i] - opens[i]), 0.28)
         ax.bar(
-            x[i], body_height, bottom=body_bottom, width=0.62,
-            color=color, edgecolor=color, linewidth=0.8, zorder=3
+            x[i], b_h, bottom=b_bot, width=0.72,
+            color=body_col, edgecolor=body_col, linewidth=0.9, zorder=4
         )
 
-    ax.plot(x, ema20, color="#2962ff", linewidth=1.6, label="EMA 20", zorder=4)
-    ax.plot(x, ema50, color="#ff9800", linewidth=1.6, label="EMA 50", zorder=4)
+    ax.plot(x, ema20, color="#3b82f6", linewidth=2.0, label="EMA 20", zorder=5)
+    ax.plot(x, ema50, color="#f97316", linewidth=2.0, label="EMA 50", zorder=5)
 
-    live_p = float(smc["live_price"])
-    ax.axhline(live_p, color="#00e5ff", linestyle="--", linewidth=1.1, alpha=0.85, zorder=5)
+    ax.axhline(live_p, color="#00f2fe", linestyle="--", linewidth=1.2, alpha=0.9, zorder=6)
     ax.text(
-        len(df) + 0.6, live_p, f" ${live_p:.2f} ",
-        color="#0d121d", fontsize=9.5, fontweight="bold", va="center",
-        bbox=dict(boxstyle="round,pad=0.25", facecolor="#00e5ff", edgecolor="none")
+        n_total + 0.4, live_p, f" ${live_p:.2f} ",
+        color="#0b101b", fontsize=9.5, fontweight="bold", va="center",
+        bbox=dict(boxstyle="round,pad=0.28", facecolor="#00f2fe", edgecolor="none"),
+        zorder=7
     )
 
     ax.text(
-        0.02, 0.96, f"OANDA:XAUUSD • {tf_label} • FR6 FX INSTITUTIONAL FEED",
-        transform=ax.transAxes, color="#94a3b8", fontsize=10, fontweight="bold", va="top"
+        0.015, 0.975, f"XAUUSD • {tf_label} • SMART MONEY STRUCTURE",
+        transform=ax.transAxes, color="#e2e8f0", fontsize=10.5, fontweight="bold", va="top",
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="#131c2e", edgecolor="#26334d"),
+        zorder=7
     )
     ax.text(
-        0.5, 0.5, "FR6 FX\nXAUUSD",
-        transform=ax.transAxes, color="#ffffff", alpha=0.04,
-        fontsize=46, fontweight="bold", ha="center", va="center"
+        0.5, 0.5, "FR6 FX",
+        transform=ax.transAxes, color="#ffffff", alpha=0.045,
+        fontsize=64, fontweight="bold", ha="center", va="center", zorder=1
     )
 
     ax.yaxis.tick_right()
     ax.yaxis.set_label_position("right")
-    ax.tick_params(axis="y", colors="#cbd5e1", labelsize=9.5)
+    ax.tick_params(axis="y", colors="#cbd5e1", labelsize=10)
     ax.tick_params(axis="x", colors="#64748b", labelsize=8.5)
-    ax.grid(True, color="#1e293b", linestyle="-", linewidth=0.6, alpha=0.8)
+    ax.grid(True, color="#192338", linestyle="-", linewidth=0.7, alpha=0.85)
 
-    tick_step = max(len(df) // 6, 1)
-    tick_idxs = list(range(0, len(df), tick_step))
+    tick_step = max(n_total // 5, 1)
+    tick_idxs = list(range(0, n_total, tick_step))
     tick_labels = [df.index[i].strftime("%H:%M") for i in tick_idxs]
     ax.set_xticks(tick_idxs)
     ax.set_xticklabels(tick_labels)
@@ -158,27 +200,45 @@ def render_pro_chart_image(df, tf_label, smc, out_png_path):
     for spine in ["top", "left"]:
         ax.spines[spine].set_visible(False)
     for spine in ["bottom", "right"]:
-        ax.spines[spine].set_color("#263244")
+        ax.spines[spine].set_color("#26334d")
 
-    y_min = min(lows.min(), float(smc["strong_low"])) - 3.0
-    y_max = max(highs.max(), float(smc["strong_high"])) + 3.0
-    ax.set_ylim(y_min, y_max)
-    ax.set_xlim(-1, len(df) + 6)
+    all_lows = min(df["Low"].min(), dem_low)
+    all_highs = max(df["High"].max(), sup_high)
+    pad = max((all_highs - all_lows) * 0.08, 2.5)
+    ax.set_ylim(all_lows - pad, all_highs + pad)
+    ax.set_xlim(-1, n_total + 5.8)
 
-    leg = ax.legend(loc="upper right", frameon=True, facecolor="#131a29", edgecolor="#263244", fontsize=8.5)
+    leg = ax.legend(loc="upper right", frameon=True, facecolor="#131c2e", edgecolor="#26334d", fontsize=9)
     for text in leg.get_texts():
-        text.set_color("#e2e8f0")
+        text.set_color("#f1f5f9")
 
-    plt.tight_layout(pad=0.6)
-    plt.savefig(out_png_path, facecolor=bg_color, dpi=100)
+    plt.subplots_adjust(left=0.02, right=0.88, top=0.97, bottom=0.06)
+    plt.savefig(out_png_path, facecolor=bg_color, dpi=125)
     plt.close(fig)
 
-def build_live_pan_clip(png_path, out_webm_path):
-    """Creates an 18-second smooth live-zooming chart video clip (940x800) from the rendered chart."""
+def build_live_candle_clip(df, tf_label, smc, out_webm_path):
+    """Renders an 18-second animated live-candle printing + smooth zoom video clip."""
+    frame_dir = f"assets/frames_{tf_label}"
+    os.makedirs(frame_dir, exist_ok=True)
+    n_total = len(df)
+    start_c = max(n_total - 11, 20)
+    frame_idx = 0
+
+    for c in range(start_c, n_total + 1):
+        png_f = os.path.join(frame_dir, f"f_{frame_idx:03d}.png")
+        render_pro_chart_image(df, tf_label, smc, png_f, visible_count=c)
+        frame_idx += 1
+
+    last_png = os.path.join(frame_dir, f"f_{frame_idx - 1:03d}.png")
+    for _ in range(6):
+        png_f = os.path.join(frame_dir, f"f_{frame_idx:03d}.png")
+        Image.open(last_png).save(png_f)
+        frame_idx += 1
+
     cmd = [
-        "ffmpeg", "-y", "-loop", "1", "-i", png_path,
-        "-vf", "scale=1080:920,zoompan=z='min(zoom+0.0005,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=450:s=940x800:fps=25",
-        "-t", "18", "-c:v", "libvpx-vp9", "-b:v", "1500k", "-an", out_webm_path
+        "ffmpeg", "-y", "-framerate", "1", "-i", os.path.join(frame_dir, "f_%03d.png"),
+        "-vf", "scale=1020:914,zoompan=z='min(zoom+0.0004,1.06)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=450:s=960x860:fps=25",
+        "-t", "18", "-c:v", "libvpx-vp9", "-b:v", "1800k", "-an", out_webm_path
     ]
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -190,9 +250,9 @@ async def capture_tradingview_charts(smc):
     render_pro_chart_image(df_15, "15M", smc, "assets/tv_15m.png")
     render_pro_chart_image(df_5, "5M", smc, "assets/tv_5m.png")
 
-    build_live_pan_clip("assets/tv_15m.png", "assets/tv_15m.webm")
-    build_live_pan_clip("assets/tv_5m.png", "assets/tv_5m.webm")
-    print("✅ Crisp 15M & 5M candlestick charts and live clips rendered.")
+    build_live_candle_clip(df_15, "15M", smc, "assets/tv_15m.webm")
+    build_live_candle_clip(df_5, "5M", smc, "assets/tv_5m.webm")
+    print("✅ Institutional 15M & 5M candlestick charts with exact Y-axis SMC zones rendered.")
 def generate_ai_analysis(smc, news, session_name, played_out):
     client = genai.Client(
         api_key=os.environ["GEMINI_API_KEY"],
@@ -243,8 +303,8 @@ def generate_ai_analysis(smc, news, session_name, played_out):
     {news_block}
 
     RULES FOR 'spoken_script' (Reels Voiceover, ~95 words):
-    - Write numbers cleanly without decimals (e.g. "thirty-six twenty-five" instead of "$3625.30", and "one-oh-four" for DXY).
-    - ALWAYS spell out "fair value gap" instead of "FVG" so text-to-speech pronounces every word clearly.
+    - Write numbers cleanly without decimals (e.g. "thirty-six nineteen" instead of "$3619.60", and "one-oh-four" for DXY).
+    - ALWAYS spell out "fair value gap" instead of "FVG" and write "buy side liquidity" with a space so speech recognition transcribes it accurately.
     - Cover the live session price action, liquidity sweep/rejection ({smc['pa_signal']}), Supply & Demand zones, and DXY impact.
     - Include this exact natural CTA near the end: "Join our free Telegram channel in the bio or description for full chart markups and live news alerts, and comment your bias below."
 
@@ -299,12 +359,17 @@ def generate_ai_analysis(smc, news, session_name, played_out):
         print("🔄 Gemini busy—using built-in Mentor fallback analysis...")
         dxy_spoken = f"{smc['dxy_now']:.1f}".replace(".0", "")
         dxy_dir = "pushing higher" if "Bullish" in smc["dxy_bias"] else "pulling back"
+        clean_pa = re.sub(r"\$(\d+)\.\d+", r"\1", smc["pa_signal"])
+        clean_pa = clean_pa.replace("Buy-side", "Buy side").replace("buy-side", "buy side")
+        clean_pa = clean_pa.replace("Sell-side", "Sell side").replace("sell-side", "sell side")
+        clean_pa = clean_pa.replace("FVG", "fair value gap")
+
         result = {
             "date_label": today_label,
             "session": session_name,
             "spoken_script": (
                 f"Gold is trading near {int(smc['live_price'])} heading into the {session_name} with a {smc['bias_label'].lower()}. "
-                f"Looking at session liquidity, {smc['pa_signal'].replace('FVG', 'fair value gap')}. "
+                f"Looking at session liquidity, {clean_pa}. "
                 f"Institutional supply sits between {int(smc['retest_res'])} and {int(smc['strong_high'])}, while demand support rests near {int(smc['strong_low'])}. "
                 f"With the dollar index {dxy_dir} around {dxy_spoken}, wait for a clean sweep and retest before confirming entries. "
                 f"Join our free Telegram channel in the bio or description for full chart markups and live news alerts, and comment your bias below."
