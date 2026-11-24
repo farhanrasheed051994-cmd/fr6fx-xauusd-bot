@@ -125,6 +125,21 @@
     "equilibrium": 3651.4,
     "strong_low": 3611.8,
     "saved_5m_chart": "assets/history_20261123_2039_5m.png",
+    "evaluated": true,
+    "outcome": {
+      "won": true,
+      "setup": "Support bounce at $3611.8 -> Equilibrium $3651.4",
+      "old_session": "XAUUSD ANALYSIS",
+      "old_chart": "assets/history_20261123_2039_5m.png"
+    }
+  },
+  {
+    "timestamp": "20261124_0751",
+    "session": "LONDON SESSION",
+    "strong_high": 3676.7,
+    "equilibrium": 3644.65,
+    "strong_low": 3612.6,
+    "saved_5m_chart": "assets/history_20261124_0751_5m.png",
     "evaluated": false
   }
 ]
