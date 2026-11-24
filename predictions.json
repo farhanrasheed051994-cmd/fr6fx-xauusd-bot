@@ -140,6 +140,21 @@
     "equilibrium": 3644.65,
     "strong_low": 3612.6,
     "saved_5m_chart": "assets/history_20261124_0751_5m.png",
+    "evaluated": true,
+    "outcome": {
+      "won": true,
+      "setup": "Support bounce at $3612.6 -> Equilibrium $3644.65",
+      "old_session": "LONDON SESSION",
+      "old_chart": "assets/history_20261124_0751_5m.png"
+    }
+  },
+  {
+    "timestamp": "20261124_1349",
+    "session": "NEW YORK SESSION",
+    "strong_high": 3651.4,
+    "equilibrium": 3628.9,
+    "strong_low": 3606.4,
+    "saved_5m_chart": "assets/history_20261124_1349_5m.png",
     "evaluated": false
   }
 ]
