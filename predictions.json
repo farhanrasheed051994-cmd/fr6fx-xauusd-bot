@@ -1,15 +1,5 @@
 [
   {
-    "timestamp": "20261120_1039",
-    "session": "NEW YORK OPEN",
-    "strong_high": 3738.7,
-    "equilibrium": 3626.8,
-    "strong_low": 3514.9,
-    "saved_5m_chart": "assets/history_20261120_1039_5m.png",
-    "evaluated": true,
-    "outcome": null
-  },
-  {
     "timestamp": "20261120_1303",
     "session": "NEW YORK OPEN",
     "strong_high": 3728.9,
@@ -165,6 +155,21 @@
     "equilibrium": 3542.6,
     "strong_low": 3511.3,
     "saved_5m_chart": "assets/history_20261125_0753_5m.png",
+    "evaluated": true,
+    "outcome": {
+      "won": true,
+      "setup": "Support bounce at $3511.3 -> Equilibrium $3542.6",
+      "old_session": "LONDON SESSION",
+      "old_chart": "assets/history_20261125_0753_5m.png"
+    }
+  },
+  {
+    "timestamp": "20261125_1350",
+    "session": "NEW YORK SESSION",
+    "strong_high": 3567.4,
+    "equilibrium": 3531.85,
+    "strong_low": 3496.3,
+    "saved_5m_chart": "assets/history_20261125_1350_5m.png",
     "evaluated": false
   }
 ]
