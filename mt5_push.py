@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import MetaTrader5 as mt5
 
 REPO_DIR = r"C:\Projects\FR6_XAUUSD_Automation"
+MT5_PATH = r"C:\Program Files\MetaTrader 5 EXNESS\terminal64.exe"
 GOLD_SYMBOL = "XAUUSDm"
 DXY_SYMBOL = "DXYm"
 OUT_FILE = os.path.join(REPO_DIR, "data", "mt5_data.json")
@@ -35,7 +36,7 @@ def fetch_rates(symbol, timeframe, count):
 
 
 def main():
-    if not mt5.initialize():
+    if not mt5.initialize(path=MT5_PATH):
         raise RuntimeError(f"MT5 initialize() failed: {mt5.last_error()}")
 
     try:
