@@ -196,11 +196,12 @@ def get_smc_market_data():
     invalidation = round(dem_low - max(atr_m15 * 0.6, 2.5), 2) if is_bull else round(sup_high + max(atr_m15 * 0.6, 2.5), 2)
 
     # Next Expansion Zones if Primary Resistance or Support Breaks
-    next_bull_low = round(max(sup_high + max(atr_m15 * 1.2, 5.0), pdh), 2)
-    next_bull_high = round(max(next_bull_low + max(atr_m15 * 0.9, 5.0), h1_high), 2)
+    next_bull_low = round(sup_high + max(atr_m15 * 1.1, 6.0), 2)
+    next_bull_high = round(next_bull_low + max(atr_m15 * 0.8, 5.0), 2)
 
-    next_bear_high = round(min(dem_low - max(atr_m15 * 1.2, 5.0), pdl), 2)
-    next_bear_low = round(min(next_bear_high - max(atr_m15 * 0.9, 5.0), h1_low), 2)
+    next_bear_high = round(dem_low - max(atr_m15 * 1.1, 6.0), 2)
+    next_bear_low = round(next_bear_high - max(atr_m15 * 0.8, 5.0), 2)
+
 
     return {
         "live_price": live_price,

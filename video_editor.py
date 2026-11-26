@@ -60,8 +60,23 @@ def extract_word_captions(audio_path):
 
     merged = []
     i = 0
+    brand_tokens = {"F", "R", "6", "FX", "6FX", "FR6", "FR6FX", "OR"}
     while i < len(raw_words):
         cur = raw_words[i]["word"]
+        cur_up = cur.upper()
+
+        # Collapse spelled-out "F R 6 F X" tokens into one clean "FR6 FX"
+        if cur_up == "F" and i + 1 < len(raw_words) and raw_words[i + 1]["word"].upper() in brand_tokens:
+            end_t = raw_words[i + 1]["end"]
+            j = i + 1
+            while j < len(raw_words) and raw_words[j]["word"].upper() in brand_tokens:
+                end_t = raw_words[j]["end"]
+                j += 1
+            merged.append({"word": "FR6 FX", "start": raw_words[i]["start"], "end": end_t})
+            i = j
+            continue
+
+        # Merge split 4-digit Gold prices like ["35", "73"] -> ["3573"]
         if (
             i + 1 < len(raw_words)
             and cur.isdigit()
@@ -76,11 +91,11 @@ def extract_word_captions(audio_path):
             })
             i += 2
             continue
-        if cur.upper() in ("6FX", "FR6FX", "FR6"):
-            cur = "FR6 FX"
+
         merged.append({"word": cur, "start": raw_words[i]["start"], "end": raw_words[i]["end"]})
         i += 1
     return merged
+
 
 
 def detect_stage_timestamps(words, total_dur):
