@@ -2,17 +2,17 @@ import os
 import re
 import json
 import time
-import random
 import subprocess
 import requests
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-GOOGLE_TOKEN_URL = "https://" + ".".join(["oauth2", "googleapis", "com"]) + "/token"
-FB_GRAPH_BASE = "https://" + ".".join(["graph", "facebook", "com"]) + "/v21.0"
-FB_RUPLOAD_BASE = "https://" + ".".join(["rupload", "facebook", "com"]) + "/video-upload/v21.0"
-TG_API_BASE = "https://" + ".".join(["api", "telegram", "org"]) + "/bot"
+GOOGLE_TOKEN_URL = "https://googleapis.com"
+FB_GRAPH_BASE = "https://facebook.com"
+FB_RUPLOAD_BASE = "https://facebook.com"
+TG_API_BASE = "https://telegram.org"
+
 
 def get_secret(name):
     val = os.environ.get(name, "")
@@ -22,22 +22,30 @@ def get_secret(name):
         val = re.sub(r"^bot(?=\d+:)", "", val)
     return val
 
+
+def safe_json(resp, label):
+    try:
+        return resp.json()
+    except Exception:
+        print(f"❌ {label} Non-JSON Response (HTTP {resp.status_code}): {resp.text[:300]}")
+        return {}
+
+
 def post_to_telegram_channel(chart_png_path, mentor_report):
-    """Posts the annotated TradingView chart image first, then the full SEO mentor analysis as a separate message."""
     bot_token = get_secret("TELEGRAM_BOT_TOKEN")
     chat_id = get_secret("TELEGRAM_CHAT_ID")
     if not bot_token or not chat_id:
-        print(f"⚠️ Telegram secrets missing (token_len={len(bot_token)}, chat_id_len={len(chat_id)})—skipping Telegram post.")
+        print("⚠️ Telegram secrets missing—skipping Telegram post.")
         return
 
-    # 1. Send Annotated Chart Image
+    # 1. Send High-Res Institutional Chart Graphic
     photo_url = f"{TG_API_BASE}{bot_token}/sendPhoto"
     with open(chart_png_path, "rb") as img_file:
         photo_resp = requests.post(
             photo_url,
             data={"chat_id": chat_id},
             files={"photo": img_file},
-            timeout=20
+            timeout=25
         ).json()
 
     if photo_resp.get("ok"):
@@ -45,9 +53,9 @@ def post_to_telegram_channel(chart_png_path, mentor_report):
     else:
         print("❌ Telegram Chart Image Error:", photo_resp)
 
-    time.sleep(1.5)
+    time.sleep(1.2)
 
-    # 2. Send Full Mentor Description as Separate Message (up to 4096 chars)
+    # 2. Send Full If/Then Mentor Analysis as Separate Message
     msg_url = f"{TG_API_BASE}{bot_token}/sendMessage"
     msg_resp = requests.post(
         msg_url,
@@ -57,7 +65,7 @@ def post_to_telegram_channel(chart_png_path, mentor_report):
             "parse_mode": "HTML",
             "disable_web_page_preview": True
         },
-        timeout=20
+        timeout=25
     ).json()
 
     if msg_resp.get("ok"):
@@ -71,9 +79,10 @@ def post_to_telegram_channel(chart_png_path, mentor_report):
                 "text": plain_text,
                 "disable_web_page_preview": True
             },
-            timeout=20
+            timeout=25
         ).json()
-        print("✅ Telegram Text Fallback Result:", retry)
+        print("✅ Telegram Plain Text Fallback Result:", retry)
+
 
 def upload_youtube_short(video_path, title, description, tags=None, pinned_comment=None):
     refresh_token = get_secret("YT_REFRESH_TOKEN")
@@ -81,7 +90,7 @@ def upload_youtube_short(video_path, title, description, tags=None, pinned_comme
     client_secret = get_secret("YT_CLIENT_SECRET")
 
     if not refresh_token or not client_id or not client_secret:
-        print(f"⚠️ YouTube secrets missing (id={len(client_id)}, sec={len(client_secret)}, ref={len(refresh_token)})—skipping YouTube upload.")
+        print("⚠️ YouTube secrets missing—skipping YouTube upload.")
         return
 
     creds = Credentials(
@@ -93,16 +102,11 @@ def upload_youtube_short(video_path, title, description, tags=None, pinned_comme
     )
     youtube = build("youtube", "v3", credentials=creds)
 
-    default_tags = [
-        "XAUUSD", "Gold Trading", "Forex Analysis",
-        "Smart Money Concepts", "TradingView", "FR6FX", "Shorts"
-    ]
-
     body = {
         "snippet": {
             "title": title[:95],
             "description": description,
-            "tags": (tags or default_tags)[:20],
+            "tags": (tags or ["XAUUSD", "Gold Trading", "Smart Money Concepts", "FR6FX", "Shorts"])[:18],
             "categoryId": "27"
         },
         "status": {
@@ -129,9 +133,10 @@ def upload_youtube_short(video_path, title, description, tags=None, pinned_comme
                     }
                 }
             ).execute()
-            print("✅ YouTube SEO Pinned/Top Comment Posted")
+            print("✅ YouTube SEO Top Comment Posted")
         except Exception as ce:
-            print("⚠️ YouTube Comment Skipped (requires youtube.force-ssl scope):", ce)
+            print("⚠️ YouTube Comment Skipped:", ce)
+
 
 def create_temp_public_url(video_path, release_tag):
     subprocess.run(["gh", "release", "delete", release_tag, "-y"], stderr=subprocess.DEVNULL)
@@ -139,23 +144,17 @@ def create_temp_public_url(video_path, release_tag):
         ["gh", "release", "create", release_tag, video_path, "--title", "FR6FX Media", "--notes", "Auto"],
         check=True
     )
-    time.sleep(5)
+    time.sleep(4)
     repo = get_secret("GITHUB_REPOSITORY")
     fname = os.path.basename(video_path)
-    gh_host = ".".join(["github", "com"])
-    return f"https://{gh_host}/{repo}/releases/download/{release_tag}/{fname}"
-def safe_json(resp, label):
-    try:
-        return resp.json()
-    except Exception:
-        print(f"❌ {label} Non-JSON Response (HTTP {resp.status_code}): {resp.text[:300]}")
-        return {}
+    return f"https://github.com{repo}/releases/download/{release_tag}/{fname}"
+
 
 def upload_instagram_reel(video_url, caption):
     ig_id = get_secret("IG_USER_ID")
     token = get_secret("META_ACCESS_TOKEN")
     if not ig_id or not token:
-        print(f"⚠️ Instagram secrets missing (ig_id={len(ig_id)}, token={len(token)})—skipping Instagram upload.")
+        print("⚠️ Instagram secrets missing—skipping Instagram upload.")
         return
 
     resp = requests.post(
@@ -170,7 +169,6 @@ def upload_instagram_reel(video_url, caption):
         timeout=30
     )
     r = safe_json(resp, "Instagram Container")
-
     creation_id = r.get("id")
     if not creation_id:
         print("❌ Instagram Container Error:", r)
@@ -195,14 +193,14 @@ def upload_instagram_reel(video_url, caption):
         data={"creation_id": creation_id, "access_token": token},
         timeout=30
     )
-    pub = safe_json(pub_resp, "Instagram Publish")
-    print("✅ Instagram Reel Live:", pub)
+    print("✅ Instagram Reel Live:", safe_json(pub_resp, "Instagram Publish"))
+
 
 def upload_facebook_reel(video_url, caption):
     page_id = get_secret("FB_PAGE_ID")
     page_token = get_secret("FB_PAGE_TOKEN")
     if not page_id or not page_token:
-        print(f"⚠️ Facebook secrets missing (page_id={len(page_id)}, token={len(page_token)})—skipping Facebook upload.")
+        print("⚠️ Facebook secrets missing—skipping Facebook upload.")
         return
 
     start_resp = requests.post(
@@ -210,11 +208,9 @@ def upload_facebook_reel(video_url, caption):
         data={"upload_phase": "start", "access_token": page_token},
         timeout=30
     )
-    start_res = safe_json(start_resp, "Facebook Start")
-
-    video_id = start_res.get("video_id")
+    video_id = safe_json(start_resp, "Facebook Start").get("video_id")
     if not video_id:
-        print("❌ Facebook Start Error:", start_res)
+        print("❌ Facebook Start Error")
         return
 
     requests.post(
@@ -234,8 +230,8 @@ def upload_facebook_reel(video_url, caption):
         },
         timeout=30
     )
-    fin_res = safe_json(fin_resp, "Facebook Finish")
-    print("✅ Facebook Reel Live:", fin_res)
+    print("✅ Facebook Reel Live:", safe_json(fin_resp, "Facebook Finish"))
+
 
 def broadcast_reel(video_path, yt_title, yt_desc, yt_tags, yt_comment, ig_caption, fb_caption, tag_name):
     try:
@@ -250,54 +246,32 @@ def broadcast_reel(video_path, yt_title, yt_desc, yt_tags, yt_comment, ig_captio
     finally:
         subprocess.run(["gh", "release", "delete", tag_name, "-y"], stderr=subprocess.DEVNULL)
 
-def main():
-    time.sleep(random.randint(25, 75))
 
-    with open("assets/analysis_output.json") as f:
+def main():
+    with open("assets/analysis_output.json", "r", encoding="utf-8") as f:
         data = json.load(f)
 
     seo = data.get("seo", {})
+    tg_report = seo.get("tg_report_seo") or data.get("telegram_report", "")
 
-    # 1. Post Annotated TradingView Chart Image + Full SEO Mentor Breakdown as Separate Posts to Telegram
-    tg_report = seo.get("tg_report_seo") or data.get("telegram_report")
     if os.path.exists("assets/telegram_chart.png") and tg_report:
         try:
             post_to_telegram_channel("assets/telegram_chart.png", tg_report)
         except Exception as e:
             print("❌ Telegram Post Error:", e)
 
-    # 2. If a Bonus "CALLED IT ✅" Proof Reel was created, broadcast it
-    if os.path.exists("assets/recap_reel.mp4"):
-        recap_title = f"XAUUSD Target Smashed! How Our Gold Levels Played Out ({data['date_label']}) ✅ #Shorts"
-        recap_caption = (
-            f"Another clean XAUUSD Smart Money level played out to the dollar ✅\n\n"
-            f"Follow @FR6FX and join our free Telegram channel in bio/description for live chart markups!\n\n"
-            f"⚠️ Educational purposes only. Not financial advice.\n\n"
-            f"#XAUUSD #GoldTrading #SmartMoneyConcepts #ForexResults #FR6FX"
-        )
+    if os.path.exists("assets/final_reel.mp4"):
         broadcast_reel(
-            "assets/recap_reel.mp4",
-            recap_title,
-            recap_caption,
+            "assets/final_reel.mp4",
+            seo["yt_title"],
+            seo["yt_description"],
             seo.get("yt_tags"),
             seo.get("yt_pinned_comment"),
-            recap_caption,
-            recap_caption,
-            "fr6fx-temp-recap"
+            seo["ig_caption"],
+            seo["fb_caption"],
+            "fr6fx-temp-main"
         )
-        time.sleep(20)
 
-    # 3. Broadcast the Main Session Analysis Reel with Platform-Specific SEO
-    broadcast_reel(
-        "assets/final_reel.mp4",
-        seo.get("yt_title", data["youtube_title"]),
-        seo.get("yt_description", data["social_caption"]),
-        seo.get("yt_tags"),
-        seo.get("yt_pinned_comment"),
-        seo.get("ig_caption", data["social_caption"]),
-        seo.get("fb_caption", data["social_caption"]),
-        "fr6fx-temp-main"
-    )
 
 if __name__ == "__main__":
     main()

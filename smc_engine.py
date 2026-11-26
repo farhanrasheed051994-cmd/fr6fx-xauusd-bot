@@ -1,211 +1,287 @@
-import time
-import yfinance as yf
+import os
+import json
+import numpy as np
 import pandas as pd
-import requests
-from datetime import datetime, timezone
 
-def fetch_tradingview_spot():
-    url = "https://tradingview.com"
-    cols = ("close", "change", "high", "low", "EMA20|5", "EMA50|5", "High.1D", "Low.1D", "RSI")
-    payload = {
-        "symbols": {"tickers": ("OANDA:XAUUSD", "TVC:DXY")},
-        "columns": list(cols)
-    }
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Origin": "https://tradingview.com",
-        "Referer": "https://tradingview.com/",
-        "Content-Type": "application/json"
-    }
-    try:
-        resp = requests.post(url, json=payload, headers=headers, timeout=12)
-        if resp.status_code != 200 or not resp.text.strip():
-            print(f"⚠️ TradingView scanner status {resp.status_code}—using Yahoo spot fallback")
-            return {}
-        r = resp.json()
-        out = {}
-        for row in r.get("data", ()):
-            out.update({row.get("s"): dict(zip(cols, row.get("d", ())))})
-        return out
-    except Exception as e:
-        print(f"⚠️ TradingView scanner warning: {e}")
-        return {}
+MT5_DATA_PATH = os.path.join("data", "mt5_data.json")
 
-def download_gold_candles():
-    for ticker in ("GC=F", "XAUUSD=X"):
-        for attempt in range(2):
-            try:
-                df = yf.download(ticker, period="5d", interval="15m", progress=False)
-                if df is not None and not df.empty and len(df) >= 40:
-                    if isinstance(df.columns, pd.MultiIndex):
-                        df.columns = df.columns.get_level_values(0)
-                    return df
-            except Exception as e:
-                print(f"⚠️ yfinance {ticker} attempt {attempt + 1} failed: {e}")
-            time.sleep(2)
-    raise RuntimeError("Failed to fetch Gold 15m candle data from Yahoo Finance.")
 
-def detect_market_structure(df_intraday, live_price):
-    highs = df_intraday.get("High").values
-    lows = df_intraday.get("Low").values
-    closes = df_intraday.get("Close").values
-    n = len(df_intraday)
+def load_mt5_df(records):
+    df = pd.DataFrame(records)
+    df["time"] = pd.to_datetime(df["time"], utc=True)
+    df.set_index("time", inplace=True)
+    for col in ("open", "high", "low", "close"):
+        df[col] = df[col].astype(float)
+    df["volume"] = df["volume"].astype(int)
+    return df
 
-    swing_highs = list()
-    swing_lows = list()
-    for i in range(2, n - 2):
-        h_val = float(highs.__getitem__(i))
-        l_val = float(lows.__getitem__(i))
-        if (
-            h_val >= float(highs.__getitem__(i - 1))
-            and h_val >= float(highs.__getitem__(i - 2))
-            and h_val >= float(highs.__getitem__(i + 1))
-            and h_val >= float(highs.__getitem__(i + 2))
-        ):
-            swing_highs.append(round(h_val, 2))
-        if (
-            l_val <= float(lows.__getitem__(i - 1))
-            and l_val <= float(lows.__getitem__(i - 2))
-            and l_val <= float(lows.__getitem__(i + 1))
-            and l_val <= float(lows.__getitem__(i + 2))
-        ):
-            swing_lows.append(round(l_val, 2))
 
-    last_sh = swing_highs.__getitem__(len(swing_highs) - 1) if swing_highs else round(float(df_intraday.get("High").max()), 2)
-    last_sl = swing_lows.__getitem__(len(swing_lows) - 1) if swing_lows else round(float(df_intraday.get("Low").min()), 2)
-    recent_close = float(closes.__getitem__(n - 1))
+def compute_atr(df, period=14):
+    high = df["high"]
+    low = df["low"]
+    prev_close = df["close"].shift(1)
+    tr = pd.concat([
+        high - low,
+        (high - prev_close).abs(),
+        (low - prev_close).abs()
+    ], axis=1).max(axis=1)
+    return float(tr.rolling(period).mean().iloc[-1])
 
-    if recent_close > last_sh:
-        structure_tag = f"Bullish BOS above ${last_sh}"
-    elif recent_close < last_sl:
-        structure_tag = f"Bearish BOS below ${last_sl}"
-    elif len(swing_highs) >= 2 and swing_highs.__getitem__(len(swing_highs) - 1) < swing_highs.__getitem__(len(swing_highs) - 2):
-        structure_tag = f"Bearish CHoCH / Lower High at ${last_sh}"
-    elif len(swing_lows) >= 2 and swing_lows.__getitem__(len(swing_lows) - 1) > swing_lows.__getitem__(len(swing_lows) - 2):
-        structure_tag = f"Bullish CHoCH / Higher Low at ${last_sl}"
-    else:
-        structure_tag = f"Intraday Range (${last_sl} – ${last_sh})"
 
-    return structure_tag, last_sh, last_sl
+def compute_rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = (-delta.clip(upper=0)).rolling(period).mean()
+    rs = gain / loss.replace(0, np.nan)
+    rsi = 100 - (100 / (1 + rs))
+    val = rsi.iloc[-1]
+    return round(float(val), 1) if pd.notna(val) else 50.0
+
+
+def find_swing_points(df, left=3, right=3):
+    highs = df["high"].values
+    lows = df["low"].values
+    times = df.index
+    n = len(df)
+    swing_highs = []
+    swing_lows = []
+
+    for i in range(left, n - right):
+        window_h = highs[i - left : i + right + 1]
+        window_l = lows[i - left : i + right + 1]
+        if highs[i] == np.max(window_h):
+            swing_highs.append({"idx": i, "time": times[i], "price": round(float(highs[i]), 2)})
+        if lows[i] == np.min(window_l):
+            swing_lows.append({"idx": i, "time": times[i], "price": round(float(lows[i]), 2)})
+
+    return swing_highs, swing_lows
+
+
+def analyze_structure(df, swing_highs, swing_lows):
+    close_now = float(df["close"].iloc[-1])
+    if len(swing_highs) < 2 or len(swing_lows) < 2:
+        sh = swing_highs[-1]["price"] if swing_highs else round(float(df["high"].max()), 2)
+        sl = swing_lows[-1]["price"] if swing_lows else round(float(df["low"].min()), 2)
+        return "Consolidation Range", "NEUTRAL", sh, sl
+
+    last_sh = swing_highs[-1]["price"]
+    prev_sh = swing_highs[-2]["price"]
+    last_sl = swing_lows[-1]["price"]
+    prev_sl = swing_lows[-2]["price"]
+
+    if close_now > last_sh and last_sl > prev_sl:
+        return f"Bullish BOS above ${last_sh} (HH/HL)", "BULLISH", last_sh, last_sl
+    if close_now < last_sl and last_sh < prev_sh:
+        return f"Bearish BOS below ${last_sl} (LH/LL)", "BEARISH", last_sh, last_sl
+    if close_now > last_sh and last_sh < prev_sh:
+        return f"Bullish CHoCH above ${last_sh}", "BULLISH", last_sh, last_sl
+    if close_now < last_sl and last_sl > prev_sl:
+        return f"Bearish CHoCH below ${last_sl}", "BEARISH", last_sh, last_sl
+    if last_sh > prev_sh and last_sl > prev_sl:
+        return f"Bullish Structure (HL at ${last_sl})", "BULLISH", last_sh, last_sl
+    if last_sh < prev_sh and last_sl < prev_sl:
+        return f"Bearish Structure (LH at ${last_sh})", "BEARISH", last_sh, last_sl
+
+    return f"Internal Range (${last_sl} – ${last_sh})", "NEUTRAL", last_sh, last_sl
+def find_unmitigated_order_blocks(df, atr, live_price):
+    opens = df["open"].values
+    highs = df["high"].values
+    lows = df["low"].values
+    closes = df["close"].values
+    n = len(df)
+
+    bullish_obs = []
+    bearish_obs = []
+
+    for i in range(2, n - 3):
+        body_next1 = abs(closes[i + 1] - opens[i + 1])
+        body_next2 = abs(closes[i + 2] - opens[i + 2])
+        displacement = max(body_next1, body_next2)
+
+        # Bullish OB: Bearish candle before strong bullish displacement
+        if closes[i] < opens[i] and closes[i + 1] > opens[i + 1] and displacement >= atr * 1.15:
+            ob_low = round(float(lows[i]), 2)
+            ob_high = round(float(max(opens[i], highs[i])), 2)
+            subsequent_closes = closes[i + 2 :]
+            if len(subsequent_closes) > 0 and np.min(subsequent_closes) > ob_low and ob_low < live_price:
+                bullish_obs.append({"low": ob_low, "high": ob_high})
+
+        # Bearish OB: Bullish candle before strong bearish displacement
+        if closes[i] > opens[i] and closes[i + 1] < opens[i + 1] and displacement >= atr * 1.15:
+            ob_high = round(float(highs[i]), 2)
+            ob_low = round(float(min(opens[i], lows[i])), 2)
+            subsequent_closes = closes[i + 2 :]
+            if len(subsequent_closes) > 0 and np.max(subsequent_closes) < ob_high and ob_high > live_price:
+                bearish_obs.append({"low": ob_low, "high": ob_high})
+
+    best_demand = bullish_obs[-1] if bullish_obs else None
+    best_supply = bearish_obs[-1] if bearish_obs else None
+    return best_demand, best_supply
+
+
+def find_unmitigated_fvgs(df, live_price, min_gap=1.0):
+    highs = df["high"].values
+    lows = df["low"].values
+    n = len(df)
+
+    bull_fvgs = []
+    bear_fvgs = []
+
+    for i in range(2, n - 1):
+        if lows[i] > highs[i - 2] + min_gap:
+            gap_bot = round(float(highs[i - 2]), 2)
+            gap_top = round(float(lows[i]), 2)
+            if np.min(lows[i + 1 :]) > gap_bot and gap_bot < live_price:
+                bull_fvgs.append({"bottom": gap_bot, "top": gap_top})
+
+        if lows[i - 2] > highs[i] + min_gap:
+            gap_bot = round(float(highs[i]), 2)
+            gap_top = round(float(lows[i - 2]), 2)
+            if np.max(highs[i + 1 :]) < gap_top and gap_top > live_price:
+                bear_fvgs.append({"bottom": gap_bot, "top": gap_top})
+
+    return (bull_fvgs[-1] if bull_fvgs else None), (bear_fvgs[-1] if bear_fvgs else None)
 def get_smc_market_data():
-    tv = fetch_tradingview_spot()
-    xau = tv.get("OANDA:XAUUSD", {})
-    dxy = tv.get("TVC:DXY", {})
+    if not os.path.exists(MT5_DATA_PATH):
+        raise FileNotFoundError(f"Missing {MT5_DATA_PATH}. Run mt5_push.py first.")
 
-    gc = download_gold_candles()
-    last_gc_close = float(gc.get("Close").iloc.__getitem__(len(gc) - 1))
+    with open(MT5_DATA_PATH, "r", encoding="utf-8") as f:
+        raw = json.load(f)
 
-    live_price = round(float(xau.get("close") or last_gc_close), 2)
-    pct_change = round(float(xau.get("change") or 0.0), 2)
-    ema20 = round(float(xau.get("EMA20|5") or live_price), 2)
-    ema50 = round(float(xau.get("EMA50|5") or live_price), 2)
-    rsi_val = round(float(xau.get("RSI") or 50.0), 1)
+    df_m15 = load_mt5_df(raw["xau_m15"])
+    df_m5 = load_mt5_df(raw["xau_m5"])
+    df_dxy = load_mt5_df(raw["dxy_m15"])
+    df_h1 = load_mt5_df(raw["xau_h1"]) if raw.get("xau_h1") else None
 
-    spread = round(last_gc_close - live_price, 2)
-    df = gc.copy()
-    for col in ("Open", "High", "Low", "Close"):
-        df.__setitem__(col, df.get(col) - spread)
+    live_price = round(float(raw.get("gold_bid") or df_m5["close"].iloc[-1]), 2)
+    dxy_now = round(float(raw.get("dxy_bid") or df_dxy["close"].iloc[-1]), 3)
 
-    prev_day = df.iloc.__getitem__(slice(-192, -96)) if len(df) >= 192 else df.iloc.__getitem__(slice(None, -48))
-    pdh = round(float(prev_day.get("High").max()), 2)
-    pdl = round(float(prev_day.get("Low").min()), 2)
+    # H1 Higher-Timeframe Structure (if xau_h1 is present)
+    if df_h1 is not None and len(df_h1) >= 20:
+        h1_sh, h1_sl = find_swing_points(df_h1.tail(60), left=3, right=3)
+        h1_struct_tag, h1_dir, _, _ = analyze_structure(df_h1.tail(60), h1_sh, h1_sl)
+    else:
+        h1_struct_tag, h1_dir = "H1 aligned with M15", "NEUTRAL"
 
-    macro_24h = df.tail(96)
-    macro_high = round(max(float(macro_24h.get("High").max()), float(xau.get("High.1D") or 0)), 2)
-    macro_low = round(min(float(macro_24h.get("Low").min()), float(xau.get("Low.1D") or 99999)), 2)
+    # Daily & Session Ranges (UTC)
+    unique_dates = sorted(df_m15.index.normalize().unique())
+    if len(unique_dates) >= 2:
+        prev_day_df = df_m15[df_m15.index.normalize() == unique_dates[-2]]
+        today_df = df_m15[df_m15.index.normalize() == unique_dates[-1]]
+    else:
+        prev_day_df = df_m15.iloc[:-96]
+        today_df = df_m15.tail(96)
 
-    intraday_df = df.tail(40)
-    strong_high = round(float(intraday_df.get("High").max()), 2)
-    strong_low = round(float(intraday_df.get("Low").min()), 2)
-    if (strong_high - strong_low) < 10.0:
-        wider_df = df.tail(64)
-        strong_high = round(float(wider_df.get("High").max()), 2)
-        strong_low = round(float(wider_df.get("Low").min()), 2)
+    pdh = round(float(prev_day_df["high"].max()), 2)
+    pdl = round(float(prev_day_df["low"].min()), 2)
+    prev_day_close = float(prev_day_df["close"].iloc[-1])
+    pct_change = round(((live_price - prev_day_close) / prev_day_close) * 100.0, 2)
 
+    last_24h = df_m15.tail(96)
+    macro_high = round(float(last_24h["high"].max()), 2)
+    macro_low = round(float(last_24h["low"].min()), 2)
+
+    asia_df = today_df[(today_df.index.hour >= 0) & (today_df.index.hour < 7)]
+    london_df = today_df[(today_df.index.hour >= 7) & (today_df.index.hour < 13)]
+    ny_df = today_df[(today_df.index.hour >= 13) & (today_df.index.hour < 21)]
+
+    asia_high = round(float(asia_df["high"].max()), 2) if not asia_df.empty else macro_high
+    asia_low = round(float(asia_df["low"].min()), 2) if not asia_df.empty else macro_low
+    london_high = round(float(london_df["high"].max()), 2) if not london_df.empty else macro_high
+    london_low = round(float(london_df["low"].min()), 2) if not london_df.empty else macro_low
+    ny_high = round(float(ny_df["high"].max()), 2) if not ny_df.empty else macro_high
+    ny_low = round(float(ny_df["low"].min()), 2) if not ny_df.empty else macro_low
+
+    # Intraday Dealing Range & M15 Structure
+    dealing_df = df_m15.tail(64)
+    atr_m15 = compute_atr(df_m15, 14)
+    swing_highs, swing_lows = find_swing_points(dealing_df, left=3, right=3)
+    structure_tag, struct_dir, _, _ = analyze_structure(dealing_df, swing_highs, swing_lows)
+
+    strong_high = round(float(dealing_df["high"].max()), 2)
+    strong_low = round(float(dealing_df["low"].min()), 2)
     equilibrium = round((strong_high + strong_low) / 2.0, 2)
+    in_discount = live_price < equilibrium
 
-    df_utc = df.tz_convert("UTC") if df.index.tz is not None else df.tz_localize("UTC")
-    last_24h = df_utc.tail(96)
+    # Unmitigated Order Blocks & Fair Value Gaps
+    demand_ob, supply_ob = find_unmitigated_order_blocks(df_m15.tail(96), atr_m15, live_price)
+    bull_fvg, bear_fvg = find_unmitigated_fvgs(df_m15.tail(64), live_price, min_gap=max(1.0, atr_m15 * 0.25))
 
-    asia_df = last_24h.loc.__getitem__((last_24h.index.hour >= 0) & (last_24h.index.hour < 7))
-    london_df = last_24h.loc.__getitem__((last_24h.index.hour >= 7) & (last_24h.index.hour < 13))
-    ny_df = last_24h.loc.__getitem__((last_24h.index.hour >= 13) & (last_24h.index.hour < 21))
+    dem_low = demand_ob["low"] if demand_ob else strong_low
+    dem_high = demand_ob["high"] if demand_ob else round(strong_low + max(atr_m15 * 0.8, 3.0), 2)
+    sup_high = supply_ob["high"] if supply_ob else strong_high
+    sup_low = supply_ob["low"] if supply_ob else round(strong_high - max(atr_m15 * 0.8, 3.0), 2)
 
-    asia_high = round(float(asia_df.get("High").max()), 2) if not asia_df.empty else strong_high
-    asia_low = round(float(asia_df.get("Low").min()), 2) if not asia_df.empty else strong_low
-    london_high = round(float(london_df.get("High").max()), 2) if not london_df.empty else strong_high
-    london_low = round(float(london_df.get("Low").min()), 2) if not london_df.empty else strong_low
-    ny_high = round(float(ny_df.get("High").max()), 2) if not ny_df.empty else strong_high
-    ny_low = round(float(ny_df.get("Low").min()), 2) if not ny_df.empty else strong_low
+    supply_zone = f"${sup_low} – ${sup_high}"
+    demand_zone = f"${dem_low} – ${dem_high}"
 
-    zone_thickness = round(max((strong_high - strong_low) * 0.16, 2.8), 2)
-    supply_low = round(strong_high - zone_thickness, 2)
-    demand_high = round(strong_low + zone_thickness, 2)
-    supply_zone = f"${supply_low} – ${strong_high}"
-    demand_zone = f"${strong_low} – ${demand_high}"
+    fvg_parts = []
+    if bull_fvg:
+        fvg_parts.append(f"Bullish FVG ${bull_fvg['bottom']}–${bull_fvg['top']}")
+    if bear_fvg:
+        fvg_parts.append(f"Bearish FVG ${bear_fvg['bottom']}–${bear_fvg['top']}")
+    fvg_note = " | ".join(fvg_parts) if fvg_parts else "No unmitigated M15 FVG; watching OB reaction"
 
-    retest_res = supply_low
-    retest_sup = demand_high
+    # Liquidity Sweep Read
+    recent_6h = df_m15.tail(24)
+    r6_high = round(float(recent_6h["high"].max()), 2)
+    r6_low = round(float(recent_6h["low"].min()), 2)
 
-    fvg_note = "No unmitigated 15m Fair Value Gap; watching Order Block retests"
-    fvg_type = "NONE"
-    fvg_top = 0.0
-    fvg_bottom = 0.0
-    for idx in range(len(intraday_df) - 3, 2, -1):
-        c1_high = float(intraday_df.get("High").iloc.__getitem__(idx - 2))
-        c3_low = float(intraday_df.get("Low").iloc.__getitem__(idx))
-        c1_low = float(intraday_df.get("Low").iloc.__getitem__(idx - 2))
-        c3_high = float(intraday_df.get("High").iloc.__getitem__(idx))
-        if c3_low > c1_high + 1.2:
-            fvg_type = "BULLISH"
-            fvg_bottom = round(c1_high, 2)
-            fvg_top = round(c3_low, 2)
-            fvg_note = f"Bullish 15m Fair Value Gap at ${fvg_bottom} – ${fvg_top}"
-            break
-        if c1_low > c3_high + 1.2:
-            fvg_type = "BEARISH"
-            fvg_bottom = round(c3_high, 2)
-            fvg_top = round(c1_low, 2)
-            fvg_note = f"Bearish 15m Fair Value Gap at ${fvg_bottom} – ${fvg_top}"
-            break
-
-    structure_tag, swing_high_ref, swing_low_ref = detect_market_structure(intraday_df, live_price)
-
-    recent_6h = df.tail(24)
-    recent_6h_high = round(float(recent_6h.get("High").max()), 2)
-    recent_6h_low = round(float(recent_6h.get("Low").min()), 2)
-
-    if recent_6h_high > asia_high and live_price < asia_high:
-        pa_signal = f"Buy side liquidity swept above Asian High (${asia_high}) with bearish rejection ({structure_tag})"
-    elif recent_6h_low < asia_low and live_price > asia_low:
-        pa_signal = f"Sell side liquidity swept below Asian Low (${asia_low}) with bullish reclaim ({structure_tag})"
-    elif recent_6h_high > pdh and live_price < pdh:
-        pa_signal = f"Liquidity raid above Previous Day High (${pdh}); sellers defending supply ({structure_tag})"
-    elif recent_6h_low < pdl and live_price > pdl:
-        pa_signal = f"Stop-hunt sweep below Previous Day Low (${pdl}); buyers defending demand ({structure_tag})"
-    elif live_price > equilibrium:
-        pa_signal = f"Premium structure holding above ${equilibrium} equilibrium ({structure_tag})"
+    if r6_high > pdh and live_price < pdh:
+        pa_signal = f"Buy-side liquidity swept above PDH (${pdh}) with bearish rejection"
+    elif r6_low < pdl and live_price > pdl:
+        pa_signal = f"Sell-side liquidity swept below PDL (${pdl}) with bullish reclaim"
+    elif r6_high > asia_high and live_price < asia_high:
+        pa_signal = f"Asian High (${asia_high}) liquidity raided; sellers defending premium"
+    elif r6_low < asia_low and live_price > asia_low:
+        pa_signal = f"Asian Low (${asia_low}) stop-hunt complete; buyers reclaiming discount"
+    elif in_discount:
+        pa_signal = f"Trading in Discount below ${equilibrium} equilibrium ({structure_tag})"
     else:
-        pa_signal = f"Discount structure below ${equilibrium} equilibrium ({structure_tag})"
+        pa_signal = f"Trading in Premium above ${equilibrium} equilibrium ({structure_tag})"
 
-    ema_bias = "Bullish (EMA 20 above 50)" if ema20 > ema50 else "Bearish (EMA 20 below 50)"
+    # Momentum & DXYm Correlation
+    ema20 = round(float(df_m15["close"].ewm(span=20, adjust=False).mean().iloc[-1]), 2)
+    ema50 = round(float(df_m15["close"].ewm(span=50, adjust=False).mean().iloc[-1]), 2)
+    rsi_val = compute_rsi(df_m15["close"], 14)
+    ema_bias = "Bullish (EMA20 > EMA50)" if ema20 > ema50 else "Bearish (EMA20 < EMA50)"
 
-    dxy_now = round(float(dxy.get("close") or 104.0), 2)
-    dxy_chg = float(dxy.get("change") or 0.0)
-    if dxy_chg > 0:
-        dxy_bias = f"Bullish at {dxy_now} (+{round(dxy_chg, 2)}%, pressuring Gold lower)"
+    dxy_start = float(df_dxy["close"].iloc[0])
+    dxy_chg = round(((dxy_now - dxy_start) / dxy_start) * 100.0, 2)
+    if dxy_chg > 0.05:
+        dxy_bias = f"Bullish at {dxy_now} (+{dxy_chg}%, headwind for Gold)"
+    elif dxy_chg < -0.05:
+        dxy_bias = f"Bearish at {dxy_now} ({dxy_chg}%, tailwind for Gold)"
     else:
-        dxy_bias = f"Bearish at {dxy_now} ({round(dxy_chg, 2)}%, supporting Gold upside)"
+        dxy_bias = f"Flat at {dxy_now} ({dxy_chg}%, neutral USD flow)"
 
+    # Weighted Multi-Timeframe Confluence Score
     score = 50
-    score += 15 if live_price > equilibrium else -15
-    score += 15 if ema20 > ema50 else -15
-    score += 15 if dxy_chg < 0 else -15
-    bias_label = "BULLISH BIAS" if score >= 55 else ("BEARISH BIAS" if score <= 45 else "NEUTRAL / RANGE")
+    score += 15 if h1_dir == "BULLISH" else (-15 if h1_dir == "BEARISH" else 0)
+    score += 15 if struct_dir == "BULLISH" else (-15 if struct_dir == "BEARISH" else 0)
+    score += 10 if ema20 > ema50 else -10
+    score += 10 if dxy_chg < -0.05 else (-10 if dxy_chg > 0.05 else 0)
+
+    if score >= 60:
+        bias_label = "BULLISH BIAS"
+    elif score <= 40:
+        bias_label = "BEARISH BIAS"
+    else:
+        bias_label = "RANGE / REACTION"
+
+    is_bull = score >= 50
+    watch_low = dem_low if is_bull else sup_low
+    watch_high = dem_high if is_bull else sup_high
+    invalidation = round(dem_low - max(atr_m15 * 0.6, 2.5), 2) if is_bull else round(sup_high + max(atr_m15 * 0.6, 2.5), 2)
+    tp1 = equilibrium
+    tp2 = sup_low if is_bull else dem_high
 
     return {
+        "exported_utc": raw.get("exported_utc", ""),
         "live_price": live_price,
         "pct_change": pct_change,
+        "atr_m15": round(atr_m15, 2),
+        "h1_structure": h1_struct_tag,
         "pdh": pdh,
         "pdl": pdl,
         "macro_high": macro_high,
@@ -216,20 +292,27 @@ def get_smc_market_data():
         "london_low": london_low,
         "ny_high": ny_high,
         "ny_low": ny_low,
-        "strong_high": strong_high,
+        "strong_high": sup_high,
+        "strong_low": dem_low,
         "equilibrium": equilibrium,
-        "strong_low": strong_low,
         "supply_zone": supply_zone,
         "demand_zone": demand_zone,
-        "retest_res": retest_res,
-        "retest_sup": retest_sup,
+        "supply_low": sup_low,
+        "supply_high": sup_high,
+        "demand_low": dem_low,
+        "demand_high": dem_high,
+        "watch_low": watch_low,
+        "watch_high": watch_high,
+        "invalidation": invalidation,
+        "tp1": tp1,
+        "tp2": tp2,
+        "retest_res": sup_low,
+        "retest_sup": dem_high,
+        "bull_fvg": bull_fvg,
+        "bear_fvg": bear_fvg,
         "fvg_note": fvg_note,
-        "fvg_type": fvg_type,
-        "fvg_top": fvg_top,
-        "fvg_bottom": fvg_bottom,
         "structure_tag": structure_tag,
-        "swing_high_ref": swing_high_ref,
-        "swing_low_ref": swing_low_ref,
+        "struct_dir": struct_dir,
         "pa_signal": pa_signal,
         "ema20": ema20,
         "ema50": ema50,
@@ -239,40 +322,4 @@ def get_smc_market_data():
         "dxy_bias": dxy_bias,
         "bias_label": bias_label,
         "bias_score": score,
-        "recent_6h_high": recent_6h_high,
-        "recent_6h_low": recent_6h_low
     }
-
-def get_usd_fundamental_context():
-    try:
-        resp = requests.get(
-            "https://faireconomy.media",
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Accept": "application/json"
-            },
-            timeout=10
-        )
-        if resp.status_code == 200 and resp.text.strip().startswith("{") or resp.text.strip().startswith(chr(91)):
-            data = resp.json()
-            today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            events = list()
-            for ev in data:
-                if (
-                    ev.get("country") == "USD"
-                    and ev.get("impact") in ("High", "Medium")
-                    and str(ev.get("date", "")).startswith(today_iso)
-                ):
-                    dt_str = str(ev.get("date", ""))
-                    ev_time = dt_str.__getitem__(slice(11, 16)) if len(dt_str) >= 16 else "TBD"
-                    events.append(f"• {ev.get('title')} ({ev.get('impact')} Impact — {ev_time} UTC)")
-            if events:
-                return events
-    except Exception:
-        pass
-
-    day_name = datetime.now(timezone.utc).strftime("%A")
-    return list((
-        f"• {day_name} London/NY Session Liquidity & US 10Y Treasury Yields driving XAUUSD flow",
-        "• Watch DXY reaction at session highs/lows & Federal Reserve speaker headlines"
-    ))

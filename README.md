@@ -1,1 +1,0 @@
-# fr6fx-xauusd-bot

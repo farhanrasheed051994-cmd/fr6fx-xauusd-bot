@@ -1,32 +1,10 @@
 import os
-import re
 import random
 from datetime import datetime, timezone
 
-def extract_news_keywords(news_list):
-    """Extracts high-volume macro catalysts (CPI, NFP, FOMC, Powell, etc.) from today's USD news."""
-    catalysts = []
-    keywords_map = {
-        "cpi": "CPI Inflation",
-        "non-farm": "NFP Non-Farm Payrolls",
-        "nfp": "NFP",
-        "fomc": "FOMC Fed Rate Decision",
-        "fed": "Federal Reserve",
-        "powell": "Jerome Powell Speech",
-        "ppi": "PPI Inflation",
-        "gdp": "US GDP",
-        "unemployment": "Jobless Claims",
-        "retail sales": "US Retail Sales",
-        "pmi": "US PMI"
-    }
-    joined = " ".join(news_list).lower()
-    for key, label in keywords_map.items():
-        if key in joined and label not in catalysts:
-            catalysts.append(label)
-    return catalysts[:3]
 
-def build_seo_package(smc, news_list, session_name, ai_data):
-    """Generates platform-specific SEO titles, descriptions, tags, hashtags, and pinned comments."""
+def build_seo_package(smc, session_name, ai_data):
+    """Generates algorithm-friendly, high-CTR SEO titles, descriptions, tags, and captions."""
     today_dt = datetime.now(timezone.utc)
     date_short = today_dt.strftime("%d %b %Y")
     month_year = today_dt.strftime("%B %Y")
@@ -40,43 +18,43 @@ def build_seo_package(smc, news_list, session_name, ai_data):
     )
 
     price_int = int(round(float(smc["live_price"])))
-    bias_word = "Bullish" if "BULLISH" in smc["bias_label"] else ("Bearish" if "BEARISH" in smc["bias_label"] else "Range")
-    session_clean = session_name.title()
-    catalysts = extract_news_keywords(news_list)
-    catalyst_str = f" | {catalysts[0]} Impact" if catalysts else ""
-    catalyst_line = f"📰 Today's USD Catalyst: {', '.join(catalysts)}\n" if catalysts else ""
+    sup_int = int(round(float(smc["supply_high"])))
+    dem_int = int(round(float(smc["demand_low"])))
+    wz_low = int(round(float(smc["watch_low"])))
+    wz_high = int(round(float(smc["watch_high"])))
 
-    # 1. YOUTUBE SHORTS SEO (Title < 95 chars, Search-Indexed Description, 15 Tags, Pinned Comment)
+    bias_word = (
+        "Bullish" if "BULLISH" in smc["bias_label"]
+        else ("Bearish" if "BEARISH" in smc["bias_label"] else "Key")
+    )
+    session_clean = session_name.title()
+    hook_title = str(ai_data.get("hook_title", f"Gold {session_clean} Setup")).title()
+
+    # 1. YOUTUBE SHORTS SEO (High-CTR Title < 92 chars + Search-Indexed Description + Clean Tags)
     yt_title_options = [
-        f"XAUUSD {session_clean} Analysis Today ({date_short}) | Gold ${price_int} SMC Setup #Shorts",
-        f"Gold Price Prediction Today ({date_short}) | XAUUSD {session_clean}{catalyst_str} #Shorts",
-        f"XAUUSD Live Analysis: {bias_word} Gold Levels (${smc['strong_low']}-${smc['strong_high']}) #Shorts"
+        f"XAUUSD Analysis Today ({date_short}) | {hook_title} #Shorts",
+        f"Gold Price Prediction Today ({date_short}) | XAUUSD {session_clean} Levels #Shorts",
+        f"XAUUSD {session_clean} Setup: {bias_word} Gold Levels ({dem_int}-{sup_int}) #Shorts"
     ]
-    yt_title = random.choice(yt_title_options)[:95]
+    yt_title = random.choice(yt_title_options)[:92]
 
     yt_description = (
-        f"XAUUSD {session_clean} technical analysis and Gold price prediction for {day_name}, {date_short}. "
-        f"Live OANDA XAUUSD Smart Money Concepts (SMC) breakdown covering Institutional Supply (${smc['strong_high']}), "
-        f"50% Equilibrium (${smc['equilibrium']}), Demand (${smc['strong_low']}), Fair Value Gaps, and DXY correlation.\n\n"
-        f"📲 Join Free FR6 FX Telegram (Full Chart Markups & Live USD News): https://{tg_link}\n\n"
+        f"XAUUSD {session_clean} technical analysis and Gold price levels for {day_name}, {date_short}. "
+        f"Live MT5 Smart Money Concepts (SMC) breakdown covering Institutional Supply ({smc['supply_zone']}), "
+        f"50% Equilibrium (${smc['equilibrium']}), Demand ({smc['demand_zone']}), Fair Value Gaps, and DXY correlation.\n\n"
+        f"📲 Free FR6 FX Telegram (Full Chart Markups & Execution Plans): https://{tg_link}\n\n"
         f"📊 XAUUSD KEY LEVELS ({date_short}):\n"
-        f"• Live Gold Spot: ${smc['live_price']} ({smc['bias_label']})\n"
-        f"• Institutional Supply Zone: {smc['supply_zone']}\n"
+        f"• Live Gold Price: ${smc['live_price']} ({smc['bias_label']})\n"
+        f"• Institutional Supply OB: {smc['supply_zone']}\n"
+        f"• Primary Watch Zone: ${smc['watch_low']} – ${smc['watch_high']}\n"
         f"• 50% Equilibrium Pivot: ${smc['equilibrium']}\n"
-        f"• Institutional Demand Zone: {smc['demand_zone']}\n"
+        f"• Institutional Demand OB: {smc['demand_zone']}\n"
         f"• Previous Day High / Low: ${smc['pdh']} / ${smc['pdl']}\n"
-        f"• Asian Range: ${smc['asia_low']} – ${smc['asia_high']}\n"
-        f"• DXY Correlation: {smc['dxy_bias']}\n"
-        f"{catalyst_line}\n"
-        f"⏱️ CHAPTERS:\n"
-        f"0:00 XAUUSD {session_clean} Liquidity Read\n"
-        f"0:12 Institutional Supply & 50% Equilibrium\n"
-        f"0:25 Demand Zone & DXY Macro Correlation\n"
-        f"0:35 Free Telegram Chart Markups\n\n"
-        f"🔍 Search Topics: XAUUSD analysis today, Gold price prediction {month_year}, XAUUSD {session_clean.lower()}, "
-        f"Smart Money Concepts gold trading, XAUUSD supply and demand, OANDA XAUUSD live chart, FR6 FX.\n\n"
-        f"#XAUUSD #GoldTrading #XAUUSDAnalysis #SmartMoneyConcepts #ForexTrading #GoldPricePrediction #TradingView #FR6FX #Shorts\n\n"
-        f"⚠️ Disclaimer: All analysis by @FR6FX is strictly for educational purposes and does not constitute financial advice."
+        f"• DXY Correlation: {smc['dxy_bias']}\n\n"
+        f"🔍 Topics: XAUUSD analysis today, Gold price prediction {month_year}, XAUUSD {session_clean.lower()}, "
+        f"Smart Money Concepts gold trading, XAUUSD order blocks, XAUUSD supply and demand, FR6 FX.\n\n"
+        f"#XAUUSD #GoldTrading #XAUUSDAnalysis #SmartMoneyConcepts #PriceAction #GoldPricePrediction #FR6FX #Shorts\n\n"
+        f"⚠️ Disclaimer: Educational technical analysis by @FR6FX. Not financial advice."
     )
 
     yt_tags = [
@@ -88,64 +66,65 @@ def build_seo_package(smc, news_list, session_name, ai_data):
         "Smart Money Concepts",
         "SMC trading strategy",
         "XAUUSD supply and demand",
+        "XAUUSD order block",
         "Gold forex analysis",
-        "OANDA XAUUSD",
-        "TradingView live chart",
+        "MT5 gold analysis",
         "DXY gold correlation",
         f"Gold analysis {month_year}",
         "FR6 FX",
         "Shorts"
-    ] + catalysts
+    ]
 
     yt_pinned_comment = (
-        f"📲 Get the full annotated 15M & 5M XAUUSD chart markup + real-time USD news alerts in our FREE Telegram channel: "
+        f"📲 Get the full high-res XAUUSD chart markup + Bullish/Bearish If-Then plan in our FREE Telegram: "
         f"https://{tg_link} 👇\n\n"
-        f"Are you looking for Buy entries at Demand (${smc['strong_low']}) 🟢 or Sell rejections at Supply (${smc['strong_high']}) 🔴 this session?"
+        f"Are you watching Buy confirmation at Demand ({dem_int}) 🟢 or Sell rejection at Supply ({sup_int}) 🔴 this session?"
     )
-    # 2. INSTAGRAM REELS SEO (Keyword-rich hook line + 10 rotated niche hashtags)
+    # 2. INSTAGRAM REELS SEO (Scroll-stopping 1st line + Safe non-signal hashtags)
     ig_hashtag_pool = [
-        "#XAUUSD", "#GoldTrading", "#SmartMoneyConcepts", "#ForexAnalysis",
-        "#GoldSignals", "#XAUUSDAnalysis", "#PriceActionTrading", "#ForexTrader",
-        "#OrderBlocks", "#LiquiditySweep", "#TradingView", "#FR6FX"
+        "#XAUUSD", "#GoldTrading", "#SmartMoneyConcepts", "#PriceAction",
+        "#XAUUSDAnalysis", "#OrderBlocks", "#LiquiditySweep", "#ForexEducation",
+        "#TechnicalAnalysis", "#DayTradingGold", "#SMCTrader", "#FR6FX"
     ]
-    session_tag = "#LondonSession" if "LONDON" in session_name else ("#NewYorkSession" if "NEW YORK" in session_name else "#ForexMarket")
-    ig_tags = " ".join(["#XAUUSD", "#GoldTrading", session_tag] + random.sample(ig_hashtag_pool, 7))
+    session_tag = (
+        "#LondonSession" if "LONDON" in session_name
+        else ("#NewYorkSession" if "NEW YORK" in session_name else "#AsianSession")
+    )
+    ig_tags = " ".join(["#XAUUSD", "#GoldTrading", session_tag] + random.sample(ig_hashtag_pool, 6))
 
     ig_caption = (
-        f"XAUUSD {session_clean} Analysis ({date_short}) — Gold ${smc['live_price']} Smart Money Setup 📊\n\n"
-        f"{ai_data.get('spoken_script', '')[:220].strip()}...\n\n"
-        f"🎯 Key Institutional Gold Levels:\n"
-        f"🔴 Supply Zone: {smc['supply_zone']}\n"
+        f"{ai_data.get('hook_title', 'GOLD LIQUIDITY SETUP')} — Watch ${wz_low}–${wz_high} 👀📊\n\n"
+        f"Gold is sitting at ${smc['live_price']} ({smc['bias_label']}) heading into {session_clean}. "
+        f"Wait for clean M5 confirmation inside the Watch Zone—never chase candles.\n\n"
+        f"🎯 Institutional Map ({date_short}):\n"
+        f"🔴 Supply OB: {smc['supply_zone']}\n"
+        f"🟡 Watch Zone: ${smc['watch_low']} – ${smc['watch_high']}\n"
         f"⚖️ 50% Equilibrium: ${smc['equilibrium']}\n"
-        f"🔵 Demand Zone: {smc['demand_zone']}\n"
-        f"💵 DXY Impact: {smc['dxy_bias']}\n"
-        f"{catalyst_line}\n"
-        f"📲 Join our FREE Telegram channel (link in bio) for full chart markups & live USD news: https://{tg_link}\n"
-        f"💾 Save this setup before the session move & follow @FR6FX!\n\n"
+        f"🔵 Demand OB: {smc['demand_zone']}\n"
+        f"🛑 Invalidation: ${smc['invalidation']}\n\n"
+        f"📲 Full chart breakdown in our FREE Telegram (link in bio): https://{tg_link}\n"
+        f"💬 Comment BUY 🟢 or SELL 🔴 below & save this level before the move!\n\n"
         f"⚠️ Educational purposes only. Not financial advice.\n\n"
         f"{ig_tags}"
     )
 
-    # 3. FACEBOOK REELS SEO (Search-indexed summary + interactive poll CTA + clean tags)
+    # 3. FACEBOOK REELS SEO (Hook-first lead + interactive debate trigger + clean hashtags)
     fb_caption = (
-        f"XAUUSD {session_clean} Gold Price Analysis ({date_short}) | Spot Gold at ${smc['live_price']} ({smc['bias_label']}) 📈\n\n"
+        f"{ai_data.get('hook_title', 'GOLD LIQUIDITY SETUP')} | Gold at ${smc['live_price']} ({date_short}) 📈\n\n"
+        f"Here is our institutional XAUUSD {session_clean} map:\n"
         f"🔴 Supply Resistance: {smc['supply_zone']}\n"
-        f"⚖️ 50% Equilibrium Pivot: ${smc['equilibrium']}\n"
+        f"🟡 Primary Watch Zone: ${smc['watch_low']} – ${smc['watch_high']}\n"
+        f"⚖️ 50% Equilibrium: ${smc['equilibrium']}\n"
         f"🔵 Demand Support: {smc['demand_zone']}\n"
-        f"💧 Liquidity Read: {smc['pa_signal']}\n"
-        f"{catalyst_line}\n"
-        f"📲 Free Telegram Chart Markups & Live USD News Alerts: https://{tg_link}\n\n"
-        f"👇 Team Bullish 🟢 or Team Bearish 🔴 for Gold this session? Drop your bias in the comments!\n"
-        f"⚠️ Educational analysis only. Not financial advice.\n\n"
-        f"#XAUUSD #GoldTrading #XAUUSDAnalysis #SmartMoneyConcepts #ForexTrading {session_tag} #FR6FX"
+        f"💧 Liquidity Read: {smc['pa_signal']}\n\n"
+        f"📲 Free Telegram Chart Markups & Execution Plans: https://{tg_link}\n\n"
+        f"👇 Team Bullish 🟢 or Team Bearish 🔴 on Gold today? Drop your bias in the comments!\n"
+        f"⚠️ Educational technical analysis only. Not financial advice.\n\n"
+        f"#XAUUSD #GoldTrading #XAUUSDAnalysis #SmartMoneyConcepts #PriceAction {session_tag} #FR6FX"
     )
 
-    # 4. TELEGRAM CHANNEL SEO (Searchable cashtags/hashtags header + footer on the separate mentor text post)
-    catalyst_tags = " ".join([f"#{re.sub(r'[^A-Za-z0-9]', '', c)}" for c in catalysts])
-    tg_seo_footer = (
-        f"\n\n🔍 #XAUUSD #GOLD #SMC {session_tag} #DXY #ForexAnalysis {catalyst_tags} #FR6FX"
-    ).replace("  ", " ")
-
+    # 4. TELEGRAM CHANNEL SEO FOOTER
+    tg_seo_footer = f"\n\n🔍 #XAUUSD #GOLD #SMC {session_tag} #DXY #PriceAction #FR6FX"
     base_tg_report = ai_data.get("telegram_report", "").strip()
     if "#XAUUSD" not in base_tg_report:
         tg_report_seo = f"{base_tg_report}{tg_seo_footer}"
@@ -155,7 +134,7 @@ def build_seo_package(smc, news_list, session_name, ai_data):
     return {
         "yt_title": yt_title,
         "yt_description": yt_description,
-        "yt_tags": yt_tags[:20],
+        "yt_tags": yt_tags[:18],
         "yt_pinned_comment": yt_pinned_comment,
         "ig_caption": ig_caption,
         "fb_caption": fb_caption,
