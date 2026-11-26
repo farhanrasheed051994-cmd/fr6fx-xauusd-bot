@@ -29,8 +29,6 @@ def clean_spoken_text(raw_text):
     txt = txt.replace("FVG", "fair value gap").replace("OB", "order block")
     txt = txt.replace("BOS", "break of structure").replace("CHoCH", "change of character")
     return txt.strip()
-
-
 def generate_ai_analysis(smc, session_name):
     today_label = datetime.now(timezone.utc).strftime("%d %b %Y")
     tg_link = (
@@ -49,39 +47,38 @@ def generate_ai_analysis(smc, session_name):
     w_low = smc["watch_low"]
     w_high = smc["watch_high"]
     inv = smc["invalidation"]
+    a_low = smc["asia_low"]
+    a_high = smc["asia_high"]
 
     prompt = f"""
-You are the head Smart Money Concepts (SMC) analyst for @FR6FX.
-Return ONLY valid JSON based on the exact MT5 XAUUSDm metrics below.
+You are the lead Smart Money Concepts (SMC) strategist for @FR6FX.
+Return ONLY valid JSON based on these live MT5 XAUUSDm metrics.
 
-METRICS ({session_name} | {today_label}):
-- Live Gold: ${live_p} ({smc['pct_change']}%) | Bias: {smc['bias_label']} ({smc['bias_score']}/100)
-- H1: {smc['h1_structure']} | M15: {smc['structure_tag']}
-- Liquidity: {smc['pa_signal']} | DXY: {smc['dxy_bias']}
-- Supply Resistance (above price): ${s_low} – ${s_high}
-- Demand Support (below price): ${d_low} – ${d_high}
-- 50% Equilibrium: ${eq} | Primary Watch Zone: ${w_low} – ${w_high}
-- Bullish Scenario: Break & hold above ${s_high} -> TP1 ${smc['bull_tp1']}, TP2 ${smc['bull_tp2']} (SL below ${d_low})
-- Bearish Scenario: Rejection at ${s_low} or break below ${d_low} -> TP1 ${smc['bear_tp1']}, TP2 ${smc['bear_tp2']} (SL above ${s_high})
+LIVE METRICS ({session_name} | {today_label}):
+- Gold Price: ${live_p} ({smc['pct_change']}%) | Bias: {smc['bias_label']}
+- Asia Range: ${a_low} – ${a_high} | Liquidity Event: {smc['pa_signal']}
+- H1: {smc['h1_structure']} | M15: {smc['structure_tag']} | DXYm: {smc['dxy_bias']}
+- Supply Resistance Zone: ${s_low} – ${s_high} | If broken -> Next Expansion Zone: {smc['next_supply_zone']}
+- Demand Support Zone: ${d_low} – ${d_high} | If broken -> Next Expansion Zone: {smc['next_demand_zone']}
+- 50% Equilibrium: ${eq} | Primary Watch Zone: ${w_low} – ${w_high} | Invalidation: ${inv}
 
-STRICT RULES:
-1. "hook_title": Bold 3-to-4 word hook in ALL CAPS, STRICTLY <= 22 characters (e.g. "GOLD TRAP AT {int(round(s_high))}?" or "GOLD KEY ZONE {int(round(w_low))}").
-2. "spoken_script": Crisp 26-second voiceover (~65 words), whole integers only, NO dollar signs, say "Gold" not XAUUSD:
-   - Hook Gold at {int(round(live_p))} and current liquidity/bias.
-   - State "Resistance sits at {int(round(s_high))}."
-   - State "Support holds at {int(round(d_low))}."
-   - State "Our watch zone is {int(round(w_low))} to {int(round(w_high))}."
-   - State "Dropping to the 5 minute chart, wait for confirmation and never chase."
-   - End with "Follow FR6 FX and join our free Telegram in bio."
-3. "telegram_report": Clean institutional Telegram post (1,000-1,300 chars) using ONLY <b>, <i>, <code> tags. Keep DXY decimal intact ({smc['dxy_now']}). Use the EXACT Bullish & Bearish targets given above.
+REQUIREMENTS:
+1. "hook_title": Bold 3-to-4 word curiosity hook in ALL CAPS, STRICTLY <= 22 chars (e.g. "ASIA TRAP AT {int(round(a_high))}?" or "GOLD NEXT ZONE {int(round(smc['bull_tp1']))}").
+2. "spoken_script": High-retention 30-second institutional voiceover (~75 words), whole integers only, NO dollar signs, say "Gold" not XAUUSD:
+   - Beat 1 (Session Trap): Explain what Asia built ({int(round(a_low))} to {int(round(a_high))}) and what London/current session is doing near {int(round(live_p))}.
+   - Beat 2 (Supply + Next Target): Say "Resistance sits at {int(round(s_high))}, and if buyers break above it, the next expansion target is {int(round(smc['bull_tp1']))}."
+   - Beat 3 (Demand + Next Target): Say "Support holds at {int(round(d_low))}, and if that breaks, the next downside target is {int(round(smc['bear_tp1']))}."
+   - Beat 4 (Watch Zone): Say "Our primary watch zone is {int(round(w_low))} to {int(round(w_high))}."
+   - Beat 5 (M5 Execution + CTA): Say "Dropping to the 5 minute chart, wait for a structure shift and never chase. Follow FR6 FX and join our free Telegram link in bio."
+3. "telegram_report": Institutional Telegram breakdown (1,100–1,400 chars) using ONLY <b>, <i>, <code> tags. Include Asia Range, Liquidity Sweep, Supply/Demand OBs, Primary Watch Zone, and BOTH Breakout Expansion Scenarios (If Resistance breaks -> Next Zone; If Support breaks -> Next Zone).
 
 Return ONLY JSON:
 {{
-  "hook_title": "SHORT HOOK <=22 CHARS",
+  "hook_title": "HOOK <= 22 CHARS",
   "date_label": "{today_label}",
   "session": "{session_name}",
-  "spoken_script": "65-word clean voiceover",
-  "telegram_report": "HTML Telegram report"
+  "spoken_script": "75-word session story & next-zone voiceover",
+  "telegram_report": "HTML Telegram breakdown"
 }}
 """
     result = None
@@ -91,8 +88,8 @@ Return ONLY JSON:
             api_key=os.environ.get("GEMINI_API_KEY"),
             http_options={"timeout": 45}
         )
-        img_stage4 = Image.open("assets/stage_4.png").resize((540, 520), Image.Resampling.LANCZOS)
-        img_stage5 = Image.open("assets/stage_5.png").resize((540, 520), Image.Resampling.LANCZOS)
+        img_stage4 = Image.open("assets/stage_4b.png").resize((540, 540), Image.Resampling.LANCZOS)
+        img_stage5 = Image.open("assets/stage_5.png").resize((540, 540), Image.Resampling.LANCZOS)
 
         for model_name in ("gemini-2.5-flash", "gemini-2.5-flash-lite"):
             try:
@@ -101,7 +98,7 @@ Return ONLY JSON:
                     contents=(prompt, img_stage4, img_stage5),
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
-                        temperature=0.3
+                        temperature=0.35
                     )
                 )
                 if response and response.text:
@@ -127,7 +124,7 @@ Return ONLY JSON:
                             {"role": "system", "content": "Return ONLY raw valid JSON."},
                             {"role": "user", "content": prompt}
                         ],
-                        "temperature": 0.3
+                        "temperature": 0.35
                     },
                     timeout=25
                 )
@@ -144,38 +141,38 @@ Return ONLY JSON:
     is_bull = "BULLISH" in str(smc.get("bias_label", ""))
     if result:
         result["spoken_script"] = clean_spoken_text(result.get("spoken_script", ""))
-        result["hook_title"] = str(result.get("hook_title", "GOLD KEY LEVELS")).upper()[:22]
+        result["hook_title"] = str(result.get("hook_title", "GOLD LIQUIDITY MAP")).upper()[:22]
     else:
-        hook_def = f"GOLD DEMAND AT {int(round(d_low))}?" if is_bull else f"GOLD TRAP AT {int(round(s_high))}?"
+        hook_def = f"ASIA TRAP AT {int(round(a_high))}?" if not is_bull else f"GOLD NEXT ZONE {int(round(smc['bull_tp1']))}"
         result = {
             "hook_title": hook_def[:22],
             "date_label": today_label,
             "session": session_name,
             "spoken_script": (
-                f"Gold is trading near {int(round(live_p))} entering {session_name.lower()} with a {smc['bias_label'].lower()}. "
-                f"Resistance sits at {int(round(s_high))}. "
-                f"Support holds at {int(round(d_low))}. "
-                f"Our watch zone is {int(round(w_low))} to {int(round(w_high))}. "
-                f"Dropping to the 5 minute chart, wait for confirmation and never chase. "
-                f"Follow FR6 FX and join our free Telegram in bio."
+                f"During Asia, Gold built liquidity between {int(round(a_low))} and {int(round(a_high))}, now trading near {int(round(live_p))}. "
+                f"Resistance sits at {int(round(s_high))}, and if buyers break above it, the next expansion target is {int(round(smc['bull_tp1']))}. "
+                f"Support holds at {int(round(d_low))}, and if that breaks, the next downside target is {int(round(smc['bear_tp1']))}. "
+                f"Our primary watch zone is {int(round(w_low))} to {int(round(w_high))}. "
+                f"Dropping to the 5 minute chart, wait for a structure shift and never chase. "
+                f"Follow FR6 FX and join our free Telegram link in bio."
             ),
             "telegram_report": (
                 f"🟡 <b>FR6 FX | XAUUSD {session_name}</b> ({today_label})\n"
                 f"💰 Spot: <b>${live_p}</b> ({smc['pct_change']}%)  |  <b>{smc['bias_label']}</b>\n\n"
-                f"📐 <b>STRUCTURE & FLOW</b>\n"
-                f"• <b>H1:</b> {smc['h1_structure']}\n"
-                f"• <b>M15:</b> {smc['structure_tag']}\n"
-                f"• <b>Liquidity:</b> {smc['pa_signal']}\n"
+                f"🌊 <b>SESSION LIQUIDITY & FLOW</b>\n"
+                f"• <b>Asia Range:</b> <code>${a_low} – ${a_high}</code>\n"
+                f"• <b>Liquidity Read:</b> {smc['pa_signal']}\n"
+                f"• <b>H1 / M15:</b> {smc['h1_structure']} | {smc['structure_tag']}\n"
                 f"• <b>DXYm:</b> {smc['dxy_bias']}\n\n"
-                f"🎯 <b>INSTITUTIONAL LEVELS</b>\n"
-                f"• 🔴 Supply Resistance: <code>${s_low} – ${s_high}</code>\n"
-                f"• ⚖️ 50% Equilibrium: <code>${eq}</code>\n"
-                f"• 🔵 Demand Support: <code>${d_low} – ${d_high}</code>\n"
-                f"• 📊 PDH / PDL: <code>${smc['pdh']}</code> / <code>${smc['pdl']}</code>\n\n"
-                f"⚡ <b>IF / THEN EXECUTION PLAN</b>\n"
-                f"• 🟢 <b>Bullish:</b> Reclaim above <code>${s_high}</code> → TP1 <code>${smc['bull_tp1']}</code>, TP2 <code>${smc['bull_tp2']}</code> (Invalidation <code>${d_low}</code>)\n"
-                f"• 🔴 <b>Bearish:</b> Rejection at <code>${s_low}</code> or break below <code>${d_low}</code> → TP1 <code>${smc['bear_tp1']}</code>, TP2 <code>${smc['bear_tp2']}</code> (Invalidation <code>${s_high}</code>)\n"
-                f"• 🟡 <b>Primary Watch Zone:</b> <code>${w_low} – ${w_high}</code> (SL <code>${inv}</code>)\n\n"
+                f"🎯 <b>PRIMARY & NEXT EXPANSION ZONES</b>\n"
+                f"• 🔴 <b>Supply Resistance:</b> <code>${s_low} – ${s_high}</code>\n"
+                f"  ↳ <i>If broken above ${s_high}:</i> Next Bullish Zone <code>{smc['next_supply_zone']}</code>\n"
+                f"• ⚖️ <b>50% Equilibrium:</b> <code>${eq}</code>\n"
+                f"• 🔵 <b>Demand Support:</b> <code>${d_low} – ${d_high}</code>\n"
+                f"  ↳ <i>If broken below ${d_low}:</i> Next Bearish Zone <code>{smc['next_demand_zone']}</code>\n\n"
+                f"⚡ <b>EXECUTION PLAN</b>\n"
+                f"• 🟡 <b>Primary Watch Zone:</b> <code>${w_low} – ${w_high}</code> (Invalidation <code>${inv}</code>)\n"
+                f"• 🧠 <b>Rule:</b> Wait for M5 CHoCH confirmation inside the Watch Zone—never chase.\n\n"
                 f"📲 Daily markups: https://{tg_link}\n"
                 f"⚠️ <i>Educational analysis only. Not financial advice.</i>"
             )

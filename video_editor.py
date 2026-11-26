@@ -30,7 +30,7 @@ async def generate_voiceover(text, out_mp3):
     voices = ("en-US-AndrewNeural", "en-US-ChristopherNeural", "en-GB-RyanNeural")
     for v in voices:
         try:
-            communicate = edge_tts.Communicate(tts_text, voice=v, rate="+0%")
+            communicate = edge_tts.Communicate(tts_text, voice=v, rate="+2%")
             await communicate.save(out_mp3)
             if os.path.exists(out_mp3) and os.path.getsize(out_mp3) > 2048:
                 print(f"✅ Voiceover saved ({v}): {out_mp3}")
@@ -54,12 +54,17 @@ def extract_word_captions(audio_path):
             if clean_w:
                 raw_words.append({"word": clean_w, "start": float(w.start), "end": float(w.end)})
 
-    # Merge split 2-digit numbers like ["35", "55"] -> ["3555"] and fix brand spelling
     merged = []
     i = 0
     while i < len(raw_words):
         cur = raw_words[i]["word"]
-        if i + 1 < len(raw_words) and cur.isdigit() and len(cur) == 2 and raw_words[i + 1]["word"].isdigit() and len(raw_words[i + 1]["word"]) == 2:
+        if (
+            i + 1 < len(raw_words)
+            and cur.isdigit()
+            and len(cur) == 2
+            and raw_words[i + 1]["word"].isdigit()
+            and len(raw_words[i + 1]["word"]) == 2
+        ):
             merged.append({
                 "word": cur + raw_words[i + 1]["word"],
                 "start": raw_words[i]["start"],
@@ -72,33 +77,33 @@ def extract_word_captions(audio_path):
         merged.append({"word": cur, "start": raw_words[i]["start"], "end": raw_words[i]["end"]})
         i += 1
     return merged
-
-
 def detect_stage_timestamps(words, total_dur):
     t2 = round(total_dur * 0.24, 2)
-    t3 = round(total_dur * 0.42, 2)
-    t4 = round(total_dur * 0.60, 2)
-    t5 = round(total_dur * 0.77, 2)
+    t3 = round(total_dur * 0.43, 2)
+    t4 = round(total_dur * 0.62, 2)
+    t5 = round(total_dur * 0.79, 2)
 
     for i, w in enumerate(words):
         cur = w["word"].lower().strip(".,!?")
         nxt = words[i + 1]["word"].lower().strip(".,!?") if i + 1 < len(words) else ""
         st = float(w["start"])
-        if "resist" in cur and 1.5 <= st <= total_dur * 0.48:
+        if "resist" in cur and 1.8 <= st <= total_dur * 0.48:
             t2 = round(st, 2)
-        elif "support" in cur and t2 + 1.0 <= st <= total_dur * 0.66:
+        elif "support" in cur and t2 + 1.2 <= st <= total_dur * 0.66:
             t3 = round(st, 2)
-        elif cur == "watch" and "zone" in nxt and t3 + 1.0 <= st <= total_dur * 0.82:
+        elif cur == "watch" and "zone" in nxt and t3 + 1.2 <= st <= total_dur * 0.84:
             t4 = round(st, 2)
         elif (cur in ("5", "five") and "minute" in nxt) or cur == "dropping":
-            if t4 + 1.0 <= st <= total_dur - 2.0:
+            if t4 + 1.2 <= st <= total_dur - 2.0:
                 t5 = round(st, 2)
 
-    t2 = max(2.1, min(t2, total_dur - 5.5))
-    t3 = max(t2 + 1.5, min(t3, total_dur - 4.0))
-    t4 = max(t3 + 1.5, min(t4, total_dur - 2.8))
-    t5 = max(t4 + 1.5, min(t5, total_dur - 1.6))
+    t2 = max(2.2, min(t2, total_dur - 5.8))
+    t3 = max(t2 + 1.6, min(t3, total_dur - 4.2))
+    t4 = max(t3 + 1.6, min(t4, total_dur - 2.8))
+    t5 = max(t4 + 1.6, min(t5, total_dur - 1.6))
     return (t2, t3, t4, t5)
+
+
 def render_caption_overlays(words, total_dur):
     os.makedirs("assets/caps", exist_ok=True)
     f_cap = load_font(FONT_BOLD, 44)
@@ -126,14 +131,13 @@ def render_caption_overlays(words, total_dur):
             widths = [draw.textlength(t, font=f_cap) for t in tokens]
             total_w = sum(widths) + space_w * (len(tokens) - 1)
 
-            pad_x, pad_y = 32, 16
+            pad_x, pad_y = 32, 15
             box_w = min(840, int(total_w + pad_x * 2))
-            # Shifted slightly left (center x=495) so right-side YT/IG icons never overlap
             x_box = int(495 - box_w * 0.5)
-            y_box = 1365
+            y_box = 1412
 
             draw.rounded_rectangle(
-                (x_box, y_box, x_box + box_w, y_box + 82),
+                (x_box, y_box, x_box + box_w, y_box + 80),
                 radius=18, fill=(10, 15, 28, 245), outline=(250, 204, 21, 230), width=3
             )
 
@@ -150,41 +154,44 @@ def render_caption_overlays(words, total_dur):
     return overlays
 
 
-def build_composite_stage_frame(smc, session_name, hook_title, stage_png, out_png):
-    canvas = Image.new("RGB", (1080, 1920), (11, 15, 23))
+def build_composite_stage_frame(smc, session_name, hook_title, stage_png, out_png, progress_pct=0.0):
+    canvas = Image.new("RGB", (1080, 1920), (11, 16, 27))
     draw = ImageDraw.Draw(canvas)
 
     f_hook = load_font(FONT_BOLD, 42)
     f_meta = load_font(FONT_BOLD, 22)
 
-    # Mobile-safe top hook badge
     hook_clean = str(hook_title).upper()[:22]
     hw = draw.textlength(hook_clean, font=f_hook)
     pill_w = int(hw + 60)
     px1 = int((1080 - pill_w) * 0.5)
-    draw.rounded_rectangle((px1, 195, px1 + pill_w, 262), radius=16, fill=(23, 32, 52), outline=(250, 204, 21), width=2)
-    draw.text(((1080 - hw) * 0.5, 207), hook_clean, fill=(250, 204, 21), font=f_hook)
+    draw.rounded_rectangle((px1, 185, px1 + pill_w, 252), radius=16, fill=(23, 32, 52), outline=(250, 204, 21), width=2)
+    draw.text(((1080 - hw) * 0.5, 197), hook_clean, fill=(250, 204, 21), font=f_hook)
 
-    # Safe left/right margins (x=55 to x=935) so edge never clips on any phone
     live_p = smc["live_price"]
     bias_l = str(smc["bias_label"])
-    draw.text((55, 282), f"{session_name} • {bias_l}", fill=(148, 163, 184), font=f_meta)
+    draw.text((40, 272), f"{session_name} • {bias_l}", fill=(148, 163, 184), font=f_meta)
     meta_right = f"GOLD ${live_p}"
     rw = draw.textlength(meta_right, font=f_meta)
-    draw.text((935 - rw, 282), meta_right, fill=(56, 189, 248), font=f_meta)
+    draw.text((945 - rw, 272), meta_right, fill=(56, 189, 248), font=f_meta)
 
-    chart = Image.open(stage_png).convert("RGB").resize((1040, 1020), Image.Resampling.LANCZOS)
-    canvas.paste(chart, (10, 320))
+    # Full-width 1080x1080 chart (no black gap on right)
+    chart = Image.open(stage_png).convert("RGB").resize((1080, 1080), Image.Resampling.LANCZOS)
+    canvas.paste(chart, (0, 310))
+
+    # Animated Gold Retention Progress Bar below chart (y=1392)
+    draw.rectangle((0, 1392, 1080, 1400), fill=(30, 41, 59))
+    bar_w = int(1080 * max(0.05, min(1.0, progress_pct)))
+    draw.rectangle((0, 1392, bar_w, 1400), fill=(250, 204, 21))
+
     canvas.save(out_png)
-
-
 def export_telegram_chart_graphic(smc, session_name, date_label, chart_png, out_png):
-    canvas = Image.new("RGB", (1080, 1320), (11, 16, 27))
+    canvas = Image.new("RGB", (1080, 1340), (11, 16, 27))
     draw = ImageDraw.Draw(canvas)
     f_title = load_font(FONT_BOLD, 25)
     f_sub = load_font(FONT_BOLD, 19)
     f_card_lbl = load_font(FONT_BOLD, 17)
-    f_card_val = load_font(FONT_BOLD, 23)
+    f_card_val = load_font(FONT_BOLD, 22)
 
     bias_l = str(smc.get("bias_label", "NEUTRAL"))
     is_bull = "BULLISH" in bias_l
@@ -197,7 +204,7 @@ def export_telegram_chart_graphic(smc, session_name, date_label, chart_png, out_
     draw.rounded_rectangle((820, 34, 1032, 74), radius=8, fill=bias_col)
     draw.text((838, 43), bias_l, fill=(11, 16, 27), font=f_card_lbl)
 
-    chart = Image.open(chart_png).convert("RGB").resize((1080, 1040), Image.Resampling.LANCZOS)
+    chart = Image.open(chart_png).convert("RGB").resize((1080, 1080), Image.Resampling.LANCZOS)
     canvas.paste(chart, (0, 132))
 
     cards = (
@@ -206,9 +213,9 @@ def export_telegram_chart_graphic(smc, session_name, date_label, chart_png, out_
         (724, 1052, "DEMAND SUPPORT", str(smc["demand_zone"]), (6, 182, 212), (165, 243, 252))
     )
     for x1, x2, lbl, val, border_c, val_c in cards:
-        draw.rounded_rectangle((x1, 1188, x2, 1298), radius=12, fill=(17, 25, 43), outline=border_c, width=2)
-        draw.text((x1 + 16, 1202), lbl, fill=(148, 163, 184), font=f_card_lbl)
-        draw.text((x1 + 16, 1238), val, fill=val_c, font=f_card_val)
+        draw.rounded_rectangle((x1, 1222, x2, 1324), radius=12, fill=(17, 25, 43), outline=border_c, width=2)
+        draw.text((x1 + 16, 1236), lbl, fill=(148, 163, 184), font=f_card_lbl)
+        draw.text((x1 + 16, 1272), val, fill=val_c, font=f_card_val)
 
     canvas.save(out_png)
 
@@ -224,33 +231,51 @@ def render_progressive_reel(smc, session_name, hook_title, spoken_script, out_mp
     total_dur = round(voice_dur + 0.4, 2)
     t2, t3, t4, t5 = detect_stage_timestamps(words, voice_dur)
 
-    # 3-step candle reveal during Stage 1 so the chart animates immediately
     s1a = round(t2 * 0.33, 2)
     s1b = round(t2 * 0.33, 2)
     s1c = round(t2 - s1a - s1b, 2)
 
+    d2 = round(t3 - t2, 2)
+    s2a = round(d2 * 0.35, 2)
+    s2b = round(d2 - s2a, 2)
+
+    d3 = round(t4 - t3, 2)
+    s3a = round(d3 * 0.35, 2)
+    s3b = round(d3 - s3a, 2)
+
+    d4 = round(t5 - t4, 2)
+    s4a = round(d4 * 0.35, 2)
+    s4b = round(d4 - s4a, 2)
+
+    d5 = round(total_dur - t5, 2)
+
     stages_spec = (
-        ("assets/stage_1a.png", "assets/frame_1a.png", s1a),
-        ("assets/stage_1b.png", "assets/frame_1b.png", s1b),
-        ("assets/stage_1c.png", "assets/frame_1c.png", s1c),
-        ("assets/stage_2.png", "assets/frame_2.png", round(t3 - t2, 2)),
-        ("assets/stage_3.png", "assets/frame_3.png", round(t4 - t3, 2)),
-        ("assets/stage_4.png", "assets/frame_4.png", round(t5 - t4, 2)),
-        ("assets/stage_5.png", "assets/frame_5.png", round(total_dur - t5, 2)),
+        ("assets/stage_1a.png", "assets/frame_1a.png", s1a, 0.08),
+        ("assets/stage_1b.png", "assets/frame_1b.png", s1b, 0.16),
+        ("assets/stage_1c.png", "assets/frame_1c.png", s1c, 0.24),
+        ("assets/stage_2a.png", "assets/frame_2a.png", s2a, 0.33),
+        ("assets/stage_2b.png", "assets/frame_2b.png", s2b, 0.43),
+        ("assets/stage_3a.png", "assets/frame_3a.png", s3a, 0.52),
+        ("assets/stage_3b.png", "assets/frame_3b.png", s3b, 0.62),
+        ("assets/stage_4a.png", "assets/frame_4a.png", s4a, 0.71),
+        ("assets/stage_4b.png", "assets/frame_4b.png", s4b, 0.80),
+        ("assets/stage_5.png", "assets/frame_5.png", d5, 1.00),
     )
 
-    for st_png, fr_png, _ in stages_spec:
-        build_composite_stage_frame(smc, session_name, hook_title, st_png, fr_png)
+    for st_png, fr_png, _, pct in stages_spec:
+        build_composite_stage_frame(smc, session_name, hook_title, st_png, fr_png, progress_pct=pct)
 
     filter_parts = ""
     inputs = []
-    for idx, (_, fr_png, dur) in enumerate(stages_spec):
+    for idx, (_, fr_png, dur, _) in enumerate(stages_spec):
         inputs.extend(["-loop", "1", "-i", fr_png])
         filter_parts += f"[{idx}:v]scale=1080:1920,trim=duration={dur},setpts=PTS-STARTPTS[v{idx}];"
 
     inputs.extend(["-i", voice_mp3])
     audio_idx = len(stages_spec)
-    filter_parts += "[v0][v1][v2][v3][v4][v5][v6]concat=n=7:v=1:a=0[vbase];"
+    n_stages = len(stages_spec)
+    concat_inputs = "".join([f"[v{i}]" for i in range(n_stages)])
+    filter_parts += f"{concat_inputs}concat=n={n_stages}:v=1:a=0[vbase];"
 
     overlays = render_caption_overlays(words, total_dur)
     last_v = "[vbase]"
@@ -273,7 +298,7 @@ def render_progressive_reel(smc, session_name, hook_title, spoken_script, out_mp
         out_mp4
     ]
     subprocess.run(cmd, check=True)
-    print(f"🎬 Dynamic Mobile Reel exported: {out_mp4}")
+    print(f"🎬 Dynamic 10-Stage Wide Reel exported: {out_mp4}")
 
 
 def main():
@@ -283,7 +308,7 @@ def main():
     smc = data["smc"]
     session_name = data.get("session", "LONDON SESSION")
     date_label = data.get("date_label", "")
-    hook_title = data.get("hook_title", "GOLD KEY LEVELS")
+    hook_title = data.get("hook_title", "GOLD LIQUIDITY MAP")
     spoken_script = data.get("spoken_script", "")
 
     export_telegram_chart_graphic(

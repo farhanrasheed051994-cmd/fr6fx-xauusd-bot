@@ -60,42 +60,58 @@ def analyze_structure(df, swing_highs, swing_lows):
     if last_sh < prev_sh and last_sl < prev_sl:
         return f"Bearish Trend (LH ${last_sh})", "BEARISH", last_sh, last_sl
     return f"Consolidation (${last_sl} – ${last_sh})", "NEUTRAL", last_sh, last_sl
-def find_clean_zones(df_window, atr, live_price):
+
+
+def find_unmitigated_fvg(df_window, live_price, min_gap=1.2):
+    highs, lows = df_window["high"].values, df_window["low"].values
+    n = len(df_window)
+    for i in range(n - 2, 2, -1):
+        if lows[i] > highs[i - 2] + min_gap:
+            bot, top = round(float(highs[i - 2]), 2), round(float(lows[i]), 2)
+            if np.min(lows[i + 1 :]) > bot and bot < live_price:
+                return {"type": "BULLISH", "low": bot, "high": top}
+        if lows[i - 2] > highs[i] + min_gap:
+            bot, top = round(float(highs[i]), 2), round(float(lows[i - 2]), 2)
+            if np.max(highs[i + 1 :]) < top and top > live_price:
+                return {"type": "BEARISH", "low": bot, "high": top}
+    return None
+def find_institutional_zones(df_window, atr, live_price):
     opens, highs, lows, closes = (
         df_window["open"].values,
         df_window["high"].values,
         df_window["low"].values,
         df_window["close"].values,
     )
-    pad = round(max(atr * 0.45, 2.5), 2)
+    # Wider, realistic Order Block thickness (at least $4.50 on Gold)
+    zone_w = round(max(atr * 0.85, 4.5), 2)
 
     sup_list = []
     for i in range(2, len(df_window) - 2):
         if closes[i] > opens[i] and closes[i + 1] < opens[i + 1]:
             ob_h = round(float(highs[i]), 2)
-            ob_l = round(float(max(opens[i], ob_h - pad)), 2)
-            if ob_l > live_price + 1.5:
+            ob_l = round(min(float(opens[i]), round(ob_h - zone_w, 2)), 2)
+            if ob_l > live_price + 1.0:
                 sup_list.append((ob_l, ob_h))
 
     if sup_list:
         sup_low, sup_high = sup_list[-1]
     else:
-        sup_high = max(round(float(np.max(highs)), 2), round(live_price + pad * 2, 2))
-        sup_low = round(max(live_price + 1.5, sup_high - pad), 2)
+        sup_high = max(round(float(np.max(highs)), 2), round(live_price + zone_w * 1.6, 2))
+        sup_low = round(max(live_price + 1.5, sup_high - zone_w), 2)
 
     dem_list = []
     for i in range(2, len(df_window) - 2):
         if closes[i] < opens[i] and closes[i + 1] > opens[i + 1]:
             ob_l = round(float(lows[i]), 2)
-            ob_h = round(float(min(opens[i], ob_l + pad)), 2)
-            if ob_h < live_price - 1.5:
+            ob_h = round(max(float(opens[i]), round(ob_l + zone_w, 2)), 2)
+            if ob_h < live_price - 1.0:
                 dem_list.append((ob_l, ob_h))
 
     if dem_list:
         dem_low, dem_high = dem_list[-1]
     else:
-        dem_low = min(round(float(np.min(lows)), 2), round(live_price - pad * 2, 2))
-        dem_high = round(min(live_price - 1.5, dem_low + pad), 2)
+        dem_low = min(round(float(np.min(lows)), 2), round(live_price - zone_w * 1.6, 2))
+        dem_high = round(min(live_price - 1.5, dem_low + zone_w), 2)
 
     return dem_low, dem_high, sup_low, sup_high
 
@@ -115,8 +131,12 @@ def get_smc_market_data():
     if df_h1 is not None and len(df_h1) >= 20:
         h1_sh, h1_sl = find_swing_points(df_h1.tail(60), 3, 3)
         h1_struct_tag, h1_dir, _, _ = analyze_structure(df_h1.tail(60), h1_sh, h1_sl)
+        h1_high = round(float(df_h1.tail(48)["high"].max()), 2)
+        h1_low = round(float(df_h1.tail(48)["low"].min()), 2)
     else:
         h1_struct_tag, h1_dir = "Aligned with M15", "NEUTRAL"
+        h1_high = round(float(df_m15.tail(96)["high"].max()), 2)
+        h1_low = round(float(df_m15.tail(96)["low"].min()), 2)
 
     unique_dates = sorted(df_m15.index.normalize().unique())
     prev_day = df_m15[df_m15.index.normalize() == unique_dates[-2]] if len(unique_dates) >= 2 else df_m15.iloc[:-96]
@@ -131,23 +151,30 @@ def get_smc_market_data():
     asia_high = round(float(asia_df["high"].max()), 2) if not asia_df.empty else pdh
     asia_low = round(float(asia_df["low"].min()), 2) if not asia_df.empty else pdl
 
-    chart_df = df_m15.tail(38)
+    # 44-bar wide mobile chart window
+    chart_df = df_m15.tail(44)
     atr_m15 = compute_atr(df_m15, 14)
     sh, sl = find_swing_points(chart_df, 3, 3)
     structure_tag, struct_dir, _, _ = analyze_structure(chart_df, sh, sl)
 
-    dem_low, dem_high, sup_low, sup_high = find_clean_zones(chart_df, atr_m15, live_price)
+    dem_low, dem_high, sup_low, sup_high = find_institutional_zones(chart_df, atr_m15, live_price)
     equilibrium = round((sup_high + dem_low) / 2.0, 2)
+    fvg = find_unmitigated_fvg(chart_df, live_price, min_gap=max(1.2, atr_m15 * 0.25))
 
-    r6 = df_m15.tail(24)
-    if float(r6["high"].max()) > asia_high and live_price < asia_high:
-        pa_signal = f"Asian High (${asia_high}) swept; bearish rejection active"
-    elif float(r6["low"].min()) < asia_low and live_price > asia_low:
-        pa_signal = f"Asian Low (${asia_low}) swept; bullish reclaim active"
+    # Session Liquidity Narrative
+    r8 = df_m15.tail(32)
+    if float(r8["high"].max()) > asia_high and live_price < asia_high:
+        sweep_label = f"ASIA HIGH (${int(round(asia_high))}) SWEPT"
+        pa_signal = f"London/NY swept Asian High (${asia_high}) and rejected back inside range"
+    elif float(r8["low"].min()) < asia_low and live_price > asia_low:
+        sweep_label = f"ASIA LOW (${int(round(asia_low))}) SWEPT"
+        pa_signal = f"London/NY swept Asian Low (${asia_low}) and reclaimed structure"
     elif live_price >= equilibrium:
-        pa_signal = f"Trading in Premium above ${equilibrium} equilibrium"
+        sweep_label = "PREMIUM LIQUIDITY"
+        pa_signal = f"Price holding in Premium above ${equilibrium} 50% equilibrium"
     else:
-        pa_signal = f"Trading in Discount below ${equilibrium} equilibrium"
+        sweep_label = "DISCOUNT LIQUIDITY"
+        pa_signal = f"Price holding in Discount below ${equilibrium} 50% equilibrium"
 
     ema20 = round(float(df_m15["close"].ewm(span=20, adjust=False).mean().iloc[-1]), 2)
     ema50 = round(float(df_m15["close"].ewm(span=50, adjust=False).mean().iloc[-1]), 2)
@@ -166,12 +193,14 @@ def get_smc_market_data():
 
     watch_low = dem_low if is_bull else sup_low
     watch_high = dem_high if is_bull else sup_high
-    invalidation = round(dem_low - max(atr_m15 * 0.5, 2.0), 2) if is_bull else round(sup_high + max(atr_m15 * 0.5, 2.0), 2)
+    invalidation = round(dem_low - max(atr_m15 * 0.6, 2.5), 2) if is_bull else round(sup_high + max(atr_m15 * 0.6, 2.5), 2)
 
-    bull_tp1 = round(sup_high + max(atr_m15 * 1.2, 4.0), 2)
-    bull_tp2 = round(max(bull_tp1 + max(atr_m15 * 1.5, 5.0), pdh + 3.0), 2)
-    bear_tp1 = round(dem_low - max(atr_m15 * 1.2, 4.0), 2)
-    bear_tp2 = round(min(bear_tp1 - max(atr_m15 * 1.5, 5.0), pdl - 3.0), 2)
+    # Next Expansion Zones if Primary Resistance or Support Breaks
+    next_bull_low = round(max(sup_high + max(atr_m15 * 1.2, 5.0), pdh), 2)
+    next_bull_high = round(max(next_bull_low + max(atr_m15 * 0.9, 5.0), h1_high), 2)
+
+    next_bear_high = round(min(dem_low - max(atr_m15 * 1.2, 5.0), pdl), 2)
+    next_bear_low = round(min(next_bear_high - max(atr_m15 * 0.9, 5.0), h1_low), 2)
 
     return {
         "live_price": live_price,
@@ -184,6 +213,7 @@ def get_smc_market_data():
         "pdl": pdl,
         "asia_high": asia_high,
         "asia_low": asia_low,
+        "sweep_label": sweep_label,
         "strong_high": sup_high,
         "strong_low": dem_low,
         "equilibrium": equilibrium,
@@ -196,10 +226,13 @@ def get_smc_market_data():
         "watch_low": watch_low,
         "watch_high": watch_high,
         "invalidation": invalidation,
-        "bull_tp1": bull_tp1,
-        "bull_tp2": bull_tp2,
-        "bear_tp1": bear_tp1,
-        "bear_tp2": bear_tp2,
+        "fvg": fvg,
+        "bull_tp1": next_bull_low,
+        "bull_tp2": next_bull_high,
+        "next_supply_zone": f"${next_bull_low} – ${next_bull_high}",
+        "bear_tp1": next_bear_high,
+        "bear_tp2": next_bear_low,
+        "next_demand_zone": f"${next_bear_low} – ${next_bear_high}",
         "pa_signal": pa_signal,
         "dxy_now": dxy_now,
         "dxy_bias": dxy_bias,
