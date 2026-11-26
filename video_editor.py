@@ -26,7 +26,11 @@ def get_audio_duration(audio_path):
 
 
 async def generate_voiceover(text, out_mp3):
-    tts_text = text.replace("FR6 FX", "F R 6 F X").replace("FR6FX", "F R 6 F X")
+    tts_text = (
+        text.replace("FR6 FX", "F R 6 F X")
+        .replace("FR6FX", "F R 6 F X")
+        .replace("link in bio", "link in our profile")
+    )
     voices = ("en-US-AndrewNeural", "en-US-ChristopherNeural", "en-GB-RyanNeural")
     for v in voices:
         try:
@@ -77,33 +81,33 @@ def extract_word_captions(audio_path):
         merged.append({"word": cur, "start": raw_words[i]["start"], "end": raw_words[i]["end"]})
         i += 1
     return merged
+
+
 def detect_stage_timestamps(words, total_dur):
-    t2 = round(total_dur * 0.24, 2)
-    t3 = round(total_dur * 0.43, 2)
-    t4 = round(total_dur * 0.62, 2)
-    t5 = round(total_dur * 0.79, 2)
+    t2 = round(total_dur * 0.22, 2)
+    t3 = round(total_dur * 0.44, 2)
+    t4 = round(total_dur * 0.65, 2)
+    t5 = round(total_dur * 0.80, 2)
 
     for i, w in enumerate(words):
         cur = w["word"].lower().strip(".,!?")
         nxt = words[i + 1]["word"].lower().strip(".,!?") if i + 1 < len(words) else ""
         st = float(w["start"])
-        if "resist" in cur and 1.8 <= st <= total_dur * 0.48:
+        if "resist" in cur and 1.5 <= st <= total_dur * 0.45:
             t2 = round(st, 2)
-        elif "support" in cur and t2 + 1.2 <= st <= total_dur * 0.66:
+        elif "support" in cur and t2 + 1.5 <= st <= total_dur * 0.65:
             t3 = round(st, 2)
-        elif cur == "watch" and "zone" in nxt and t3 + 1.2 <= st <= total_dur * 0.84:
+        elif cur == "watch" and "zone" in nxt and t3 + 1.5 <= st <= total_dur * 0.85:
             t4 = round(st, 2)
         elif (cur in ("5", "five") and "minute" in nxt) or cur == "dropping":
-            if t4 + 1.2 <= st <= total_dur - 2.0:
+            if t4 + 1.2 <= st <= total_dur - 1.8:
                 t5 = round(st, 2)
 
-    t2 = max(2.2, min(t2, total_dur - 5.8))
-    t3 = max(t2 + 1.6, min(t3, total_dur - 4.2))
-    t4 = max(t3 + 1.6, min(t4, total_dur - 2.8))
-    t5 = max(t4 + 1.6, min(t5, total_dur - 1.6))
+    t2 = max(2.0, min(t2, total_dur - 6.0))
+    t3 = max(t2 + 1.8, min(t3, total_dur - 4.5))
+    t4 = max(t3 + 1.8, min(t4, total_dur - 3.0))
+    t5 = max(t4 + 1.5, min(t5, total_dur - 1.8))
     return (t2, t3, t4, t5)
-
-
 def render_caption_overlays(words, total_dur):
     os.makedirs("assets/caps", exist_ok=True)
     f_cap = load_font(FONT_BOLD, 44)
@@ -134,7 +138,7 @@ def render_caption_overlays(words, total_dur):
             pad_x, pad_y = 32, 15
             box_w = min(840, int(total_w + pad_x * 2))
             x_box = int(495 - box_w * 0.5)
-            y_box = 1412
+            y_box = 1435
 
             draw.rounded_rectangle(
                 (x_box, y_box, x_box + box_w, y_box + 80),
@@ -155,7 +159,7 @@ def render_caption_overlays(words, total_dur):
 
 
 def build_composite_stage_frame(smc, session_name, hook_title, stage_png, out_png, progress_pct=0.0):
-    canvas = Image.new("RGB", (1080, 1920), (11, 16, 27))
+    canvas = Image.new("RGB", (1080, 1920), (8, 12, 20))
     draw = ImageDraw.Draw(canvas)
 
     f_hook = load_font(FONT_BOLD, 42)
@@ -165,28 +169,31 @@ def build_composite_stage_frame(smc, session_name, hook_title, stage_png, out_pn
     hw = draw.textlength(hook_clean, font=f_hook)
     pill_w = int(hw + 60)
     px1 = int((1080 - pill_w) * 0.5)
-    draw.rounded_rectangle((px1, 185, px1 + pill_w, 252), radius=16, fill=(23, 32, 52), outline=(250, 204, 21), width=2)
-    draw.text(((1080 - hw) * 0.5, 197), hook_clean, fill=(250, 204, 21), font=f_hook)
+    draw.rounded_rectangle((px1, 180, px1 + pill_w, 246), radius=16, fill=(20, 29, 48), outline=(250, 204, 21), width=2)
+    draw.text(((1080 - hw) * 0.5, 192), hook_clean, fill=(250, 204, 21), font=f_hook)
 
     live_p = smc["live_price"]
     bias_l = str(smc["bias_label"])
-    draw.text((40, 272), f"{session_name} • {bias_l}", fill=(148, 163, 184), font=f_meta)
+    draw.text((28, 266), f"{session_name} • {bias_l}", fill=(148, 163, 184), font=f_meta)
     meta_right = f"GOLD ${live_p}"
     rw = draw.textlength(meta_right, font=f_meta)
-    draw.text((945 - rw, 272), meta_right, fill=(56, 189, 248), font=f_meta)
+    draw.text((945 - rw, 266), meta_right, fill=(56, 189, 248), font=f_meta)
 
-    # Full-width 1080x1080 chart (no black gap on right)
-    chart = Image.open(stage_png).convert("RGB").resize((1080, 1080), Image.Resampling.LANCZOS)
-    canvas.paste(chart, (0, 310))
+    # Framed Wide Chart Card (1040x1100 with crisp cyan/slate border)
+    draw.rounded_rectangle((16, 298, 1064, 1406), radius=18, fill=(14, 21, 37), outline=(51, 65, 85), width=2)
+    chart = Image.open(stage_png).convert("RGB").resize((1040, 1100), Image.Resampling.LANCZOS)
+    canvas.paste(chart, (20, 302))
 
-    # Animated Gold Retention Progress Bar below chart (y=1392)
-    draw.rectangle((0, 1392, 1080, 1400), fill=(30, 41, 59))
-    bar_w = int(1080 * max(0.05, min(1.0, progress_pct)))
-    draw.rectangle((0, 1392, bar_w, 1400), fill=(250, 204, 21))
+    # Sleek Progress Bar integrated into bottom of chart card
+    draw.rectangle((20, 1412, 1060, 1420), fill=(30, 41, 59))
+    bar_w = int(1040 * max(0.06, min(1.0, progress_pct)))
+    draw.rectangle((20, 1412, 20 + bar_w, 1420), fill=(250, 204, 21))
 
     canvas.save(out_png)
+
+
 def export_telegram_chart_graphic(smc, session_name, date_label, chart_png, out_png):
-    canvas = Image.new("RGB", (1080, 1340), (11, 16, 27))
+    canvas = Image.new("RGB", (1080, 1360), (11, 16, 27))
     draw = ImageDraw.Draw(canvas)
     f_title = load_font(FONT_BOLD, 25)
     f_sub = load_font(FONT_BOLD, 19)
@@ -204,8 +211,8 @@ def export_telegram_chart_graphic(smc, session_name, date_label, chart_png, out_
     draw.rounded_rectangle((820, 34, 1032, 74), radius=8, fill=bias_col)
     draw.text((838, 43), bias_l, fill=(11, 16, 27), font=f_card_lbl)
 
-    chart = Image.open(chart_png).convert("RGB").resize((1080, 1080), Image.Resampling.LANCZOS)
-    canvas.paste(chart, (0, 132))
+    chart = Image.open(chart_png).convert("RGB").resize((1040, 1100), Image.Resampling.LANCZOS)
+    canvas.paste(chart, (20, 132))
 
     cards = (
         (28, 356, "SUPPLY RESISTANCE", str(smc["supply_zone"]), (239, 68, 68), (254, 202, 202)),
@@ -213,9 +220,9 @@ def export_telegram_chart_graphic(smc, session_name, date_label, chart_png, out_
         (724, 1052, "DEMAND SUPPORT", str(smc["demand_zone"]), (6, 182, 212), (165, 243, 252))
     )
     for x1, x2, lbl, val, border_c, val_c in cards:
-        draw.rounded_rectangle((x1, 1222, x2, 1324), radius=12, fill=(17, 25, 43), outline=border_c, width=2)
-        draw.text((x1 + 16, 1236), lbl, fill=(148, 163, 184), font=f_card_lbl)
-        draw.text((x1 + 16, 1272), val, fill=val_c, font=f_card_val)
+        draw.rounded_rectangle((x1, 1244, x2, 1344), radius=12, fill=(17, 25, 43), outline=border_c, width=2)
+        draw.text((x1 + 16, 1258), lbl, fill=(148, 163, 184), font=f_card_lbl)
+        draw.text((x1 + 16, 1294), val, fill=val_c, font=f_card_val)
 
     canvas.save(out_png)
 
@@ -231,62 +238,60 @@ def render_progressive_reel(smc, session_name, hook_title, spoken_script, out_mp
     total_dur = round(voice_dur + 0.4, 2)
     t2, t3, t4, t5 = detect_stage_timestamps(words, voice_dur)
 
-    s1a = round(t2 * 0.33, 2)
-    s1b = round(t2 * 0.33, 2)
-    s1c = round(t2 - s1a - s1b, 2)
-
-    d2 = round(t3 - t2, 2)
-    s2a = round(d2 * 0.35, 2)
-    s2b = round(d2 - s2a, 2)
-
-    d3 = round(t4 - t3, 2)
-    s3a = round(d3 * 0.35, 2)
-    s3b = round(d3 - s3a, 2)
-
-    d4 = round(t5 - t4, 2)
-    s4a = round(d4 * 0.35, 2)
-    s4b = round(d4 - s4a, 2)
-
-    d5 = round(total_dur - t5, 2)
-
+    xf = 0.25
     stages_spec = (
-        ("assets/stage_1a.png", "assets/frame_1a.png", s1a, 0.08),
-        ("assets/stage_1b.png", "assets/frame_1b.png", s1b, 0.16),
-        ("assets/stage_1c.png", "assets/frame_1c.png", s1c, 0.24),
-        ("assets/stage_2a.png", "assets/frame_2a.png", s2a, 0.33),
-        ("assets/stage_2b.png", "assets/frame_2b.png", s2b, 0.43),
-        ("assets/stage_3a.png", "assets/frame_3a.png", s3a, 0.52),
-        ("assets/stage_3b.png", "assets/frame_3b.png", s3b, 0.62),
-        ("assets/stage_4a.png", "assets/frame_4a.png", s4a, 0.71),
-        ("assets/stage_4b.png", "assets/frame_4b.png", s4b, 0.80),
-        ("assets/stage_5.png", "assets/frame_5.png", d5, 1.00),
+        ("assets/stage_1.png", "assets/frame_1.png", round(t2 + xf, 2), 0.20),
+        ("assets/stage_2.png", "assets/frame_2.png", round((t3 - t2) + xf, 2), 0.42),
+        ("assets/stage_3.png", "assets/frame_3.png", round((t4 - t3) + xf, 2), 0.64),
+        ("assets/stage_4.png", "assets/frame_4.png", round((t5 - t4) + xf, 2), 0.82),
+        ("assets/stage_5.png", "assets/frame_5.png", round(total_dur - t5, 2), 1.00),
     )
 
     for st_png, fr_png, _, pct in stages_spec:
         build_composite_stage_frame(smc, session_name, hook_title, st_png, fr_png, progress_pct=pct)
 
-    filter_parts = ""
-    inputs = []
-    for idx, (_, fr_png, dur, _) in enumerate(stages_spec):
-        inputs.extend(["-loop", "1", "-i", fr_png])
-        filter_parts += f"[{idx}:v]scale=1080:1920,trim=duration={dur},setpts=PTS-STARTPTS[v{idx}];"
+    d1 = stages_spec.__getitem__(0).__getitem__(2)
+    d2 = stages_spec.__getitem__(1).__getitem__(2)
+    d3 = stages_spec.__getitem__(2).__getitem__(2)
+    d4 = stages_spec.__getitem__(3).__getitem__(2)
+    d5 = stages_spec.__getitem__(4).__getitem__(2)
 
-    inputs.extend(["-i", voice_mp3])
-    audio_idx = len(stages_spec)
-    n_stages = len(stages_spec)
-    concat_inputs = "".join([f"[v{i}]" for i in range(n_stages)])
-    filter_parts += f"{concat_inputs}concat=n={n_stages}:v=1:a=0[vbase];"
+    off1 = round(t2, 2)
+    off2 = round(t3, 2)
+    off3 = round(t4, 2)
+    off4 = round(t5, 2)
+
+    filter_parts = (
+        f"[0:v]scale=1080:1920,trim=duration={d1},setpts=PTS-STARTPTS[v0];"
+        f"[1:v]scale=1080:1920,trim=duration={d2},setpts=PTS-STARTPTS[v1];"
+        f"[2:v]scale=1080:1920,trim=duration={d3},setpts=PTS-STARTPTS[v2];"
+        f"[3:v]scale=1080:1920,trim=duration={d4},setpts=PTS-STARTPTS[v3];"
+        f"[4:v]scale=1080:1920,trim=duration={d5},setpts=PTS-STARTPTS[v4];"
+        f"[v0][v1]xfade=transition=fade:duration={xf}:offset={off1}[x1];"
+        f"[x1][v2]xfade=transition=fade:duration={xf}:offset={off2}[x2];"
+        f"[x2][v3]xfade=transition=fade:duration={xf}:offset={off3}[x3];"
+        f"[x3][v4]xfade=transition=fade:duration={xf}:offset={off4}[vbase];"
+    )
 
     overlays = render_caption_overlays(words, total_dur)
+    inputs = [
+        "-loop", "1", "-i", "assets/frame_1.png",
+        "-loop", "1", "-i", "assets/frame_2.png",
+        "-loop", "1", "-i", "assets/frame_3.png",
+        "-loop", "1", "-i", "assets/frame_4.png",
+        "-loop", "1", "-i", "assets/frame_5.png",
+        "-i", voice_mp3
+    ]
+
     last_v = "[vbase]"
     for idx, (cap_png, st_t, en_t) in enumerate(overlays):
-        in_idx = audio_idx + 1 + idx
+        in_idx = 6 + idx
         inputs.extend(["-i", cap_png])
         next_v = f"[vc{idx}]"
         filter_parts += f"{last_v}[{in_idx}:v]overlay=0:0:enable='between(t,{st_t},{en_t})'{next_v};"
         last_v = next_v
 
-    filter_parts += f"[{audio_idx}:a]apad=whole_dur={total_dur}[aout]"
+    filter_parts += f"[5:a]apad=whole_dur={total_dur}[aout]"
 
     cmd = [
         "ffmpeg", "-y",
@@ -298,7 +303,7 @@ def render_progressive_reel(smc, session_name, hook_title, spoken_script, out_mp
         out_mp4
     ]
     subprocess.run(cmd, check=True)
-    print(f"🎬 Dynamic 10-Stage Wide Reel exported: {out_mp4}")
+    print(f"🎬 Smooth Crossfade Wide Reel exported: {out_mp4}")
 
 
 def main():
