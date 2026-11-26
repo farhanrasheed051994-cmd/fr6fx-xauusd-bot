@@ -131,7 +131,6 @@ def get_smc_market_data():
     asia_high = round(float(asia_df["high"].max()), 2) if not asia_df.empty else pdh
     asia_low = round(float(asia_df["low"].min()), 2) if not asia_df.empty else pdl
 
-    # 38-bar window = chunky, zoomed-in mobile candles + exact sync with chart_renderer.py
     chart_df = df_m15.tail(38)
     atr_m15 = compute_atr(df_m15, 14)
     sh, sl = find_swing_points(chart_df, 3, 3)
@@ -169,6 +168,11 @@ def get_smc_market_data():
     watch_high = dem_high if is_bull else sup_high
     invalidation = round(dem_low - max(atr_m15 * 0.5, 2.0), 2) if is_bull else round(sup_high + max(atr_m15 * 0.5, 2.0), 2)
 
+    bull_tp1 = round(sup_high + max(atr_m15 * 1.2, 4.0), 2)
+    bull_tp2 = round(max(bull_tp1 + max(atr_m15 * 1.5, 5.0), pdh + 3.0), 2)
+    bear_tp1 = round(dem_low - max(atr_m15 * 1.2, 4.0), 2)
+    bear_tp2 = round(min(bear_tp1 - max(atr_m15 * 1.5, 5.0), pdl - 3.0), 2)
+
     return {
         "live_price": live_price,
         "pct_change": pct_change,
@@ -192,10 +196,10 @@ def get_smc_market_data():
         "watch_low": watch_low,
         "watch_high": watch_high,
         "invalidation": invalidation,
-        "bull_tp1": sup_low,
-        "bull_tp2": round(max(sup_high, pdh), 2),
-        "bear_tp1": dem_high,
-        "bear_tp2": round(min(dem_low, pdl), 2),
+        "bull_tp1": bull_tp1,
+        "bull_tp2": bull_tp2,
+        "bear_tp1": bear_tp1,
+        "bear_tp2": bear_tp2,
         "pa_signal": pa_signal,
         "dxy_now": dxy_now,
         "dxy_bias": dxy_bias,

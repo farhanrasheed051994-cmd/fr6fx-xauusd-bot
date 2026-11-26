@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import asyncio
 import subprocess
@@ -25,10 +26,11 @@ def get_audio_duration(audio_path):
 
 
 async def generate_voiceover(text, out_mp3):
+    tts_text = text.replace("FR6 FX", "F R 6 F X").replace("FR6FX", "F R 6 F X")
     voices = ("en-US-AndrewNeural", "en-US-ChristopherNeural", "en-GB-RyanNeural")
     for v in voices:
         try:
-            communicate = edge_tts.Communicate(text, voice=v, rate="+0%")
+            communicate = edge_tts.Communicate(tts_text, voice=v, rate="+0%")
             await communicate.save(out_mp3)
             if os.path.exists(out_mp3) and os.path.getsize(out_mp3) > 2048:
                 print(f"✅ Voiceover saved ({v}): {out_mp3}")
@@ -38,33 +40,51 @@ async def generate_voiceover(text, out_mp3):
             await asyncio.sleep(1)
 
     from gtts import gTTS
-    tts = gTTS(text=text, lang="en", tld="com", slow=False)
-    tts.save(out_mp3)
+    gTTS(text=tts_text, lang="en", tld="com", slow=False).save(out_mp3)
 
 
 def extract_word_captions(audio_path):
     model = WhisperModel("tiny.en", device="cpu", compute_type="int8")
     segments, _ = model.transcribe(audio_path, word_timestamps=True)
-    words = []
+    raw_words = []
     for seg in segments:
         for w in (seg.words or ()):
-            clean_w = w.word.strip()
+            clean_w = w.word.strip().replace(",", "")
+            clean_w = re.sub(r"^\.+|\.+$", "", clean_w)
             if clean_w:
-                words.append({"word": clean_w, "start": float(w.start), "end": float(w.end)})
-    return words
+                raw_words.append({"word": clean_w, "start": float(w.start), "end": float(w.end)})
+
+    # Merge split 2-digit numbers like ["35", "55"] -> ["3555"] and fix brand spelling
+    merged = []
+    i = 0
+    while i < len(raw_words):
+        cur = raw_words[i]["word"]
+        if i + 1 < len(raw_words) and cur.isdigit() and len(cur) == 2 and raw_words[i + 1]["word"].isdigit() and len(raw_words[i + 1]["word"]) == 2:
+            merged.append({
+                "word": cur + raw_words[i + 1]["word"],
+                "start": raw_words[i]["start"],
+                "end": raw_words[i + 1]["end"]
+            })
+            i += 2
+            continue
+        if cur.upper() in ("6FX", "FR6FX", "FR6"):
+            cur = "FR6 FX"
+        merged.append({"word": cur, "start": raw_words[i]["start"], "end": raw_words[i]["end"]})
+        i += 1
+    return merged
 
 
 def detect_stage_timestamps(words, total_dur):
-    t2 = round(total_dur * 0.22, 2)
-    t3 = round(total_dur * 0.40, 2)
-    t4 = round(total_dur * 0.58, 2)
-    t5 = round(total_dur * 0.76, 2)
+    t2 = round(total_dur * 0.24, 2)
+    t3 = round(total_dur * 0.42, 2)
+    t4 = round(total_dur * 0.60, 2)
+    t5 = round(total_dur * 0.77, 2)
 
     for i, w in enumerate(words):
         cur = w["word"].lower().strip(".,!?")
         nxt = words[i + 1]["word"].lower().strip(".,!?") if i + 1 < len(words) else ""
         st = float(w["start"])
-        if "resist" in cur and 1.2 <= st <= total_dur * 0.48:
+        if "resist" in cur and 1.5 <= st <= total_dur * 0.48:
             t2 = round(st, 2)
         elif "support" in cur and t2 + 1.0 <= st <= total_dur * 0.66:
             t3 = round(st, 2)
@@ -74,14 +94,14 @@ def detect_stage_timestamps(words, total_dur):
             if t4 + 1.0 <= st <= total_dur - 2.0:
                 t5 = round(st, 2)
 
-    t2 = max(1.5, min(t2, total_dur - 5.5))
+    t2 = max(2.1, min(t2, total_dur - 5.5))
     t3 = max(t2 + 1.5, min(t3, total_dur - 4.0))
     t4 = max(t3 + 1.5, min(t4, total_dur - 2.8))
     t5 = max(t4 + 1.5, min(t5, total_dur - 1.6))
     return (t2, t3, t4, t5)
 def render_caption_overlays(words, total_dur):
     os.makedirs("assets/caps", exist_ok=True)
-    f_cap = load_font(FONT_BOLD, 48)
+    f_cap = load_font(FONT_BOLD, 44)
     overlays = []
 
     for idx in range(0, len(words), 3):
@@ -106,14 +126,15 @@ def render_caption_overlays(words, total_dur):
             widths = [draw.textlength(t, font=f_cap) for t in tokens]
             total_w = sum(widths) + space_w * (len(tokens) - 1)
 
-            pad_x, pad_y = 36, 18
-            box_w = min(980, int(total_w + pad_x * 2))
-            x_box = int((1080 - box_w) * 0.5)
-            y_box = 1380
+            pad_x, pad_y = 32, 16
+            box_w = min(840, int(total_w + pad_x * 2))
+            # Shifted slightly left (center x=495) so right-side YT/IG icons never overlap
+            x_box = int(495 - box_w * 0.5)
+            y_box = 1365
 
             draw.rounded_rectangle(
-                (x_box, y_box, x_box + box_w, y_box + 88),
-                radius=20, fill=(10, 15, 28, 245), outline=(250, 204, 21, 230), width=3
+                (x_box, y_box, x_box + box_w, y_box + 82),
+                radius=18, fill=(10, 15, 28, 245), outline=(250, 204, 21, 230), width=3
             )
 
             cur_x = x_box + pad_x
@@ -133,29 +154,27 @@ def build_composite_stage_frame(smc, session_name, hook_title, stage_png, out_pn
     canvas = Image.new("RGB", (1080, 1920), (11, 15, 23))
     draw = ImageDraw.Draw(canvas)
 
-    f_hook = load_font(FONT_BOLD, 44)
-    f_meta = load_font(FONT_BOLD, 24)
+    f_hook = load_font(FONT_BOLD, 42)
+    f_meta = load_font(FONT_BOLD, 22)
 
-    # Mobile-safe top hook badge (strictly <=22 chars so YT/IG top icons never overlap)
+    # Mobile-safe top hook badge
     hook_clean = str(hook_title).upper()[:22]
     hw = draw.textlength(hook_clean, font=f_hook)
-    pill_w = int(hw + 68)
+    pill_w = int(hw + 60)
     px1 = int((1080 - pill_w) * 0.5)
-    draw.rounded_rectangle((px1, 195, px1 + pill_w, 265), radius=16, fill=(23, 32, 52), outline=(250, 204, 21), width=2)
-    draw.text(((1080 - hw) * 0.5, 208), hook_clean, fill=(250, 204, 21), font=f_hook)
+    draw.rounded_rectangle((px1, 195, px1 + pill_w, 262), radius=16, fill=(23, 32, 52), outline=(250, 204, 21), width=2)
+    draw.text(((1080 - hw) * 0.5, 207), hook_clean, fill=(250, 204, 21), font=f_hook)
 
-    # Session & Spot Strip
+    # Safe left/right margins (x=55 to x=935) so edge never clips on any phone
     live_p = smc["live_price"]
     bias_l = str(smc["bias_label"])
-    draw.text((48, 282), f"{session_name}  •  {bias_l}", fill=(148, 163, 184), font=f_meta)
-    meta_right = f"XAUUSD ${live_p}"
+    draw.text((55, 282), f"{session_name} • {bias_l}", fill=(148, 163, 184), font=f_meta)
+    meta_right = f"GOLD ${live_p}"
     rw = draw.textlength(meta_right, font=f_meta)
-    draw.text((1032 - rw, 282), meta_right, fill=(56, 189, 248), font=f_meta)
+    draw.text((935 - rw, 282), meta_right, fill=(56, 189, 248), font=f_meta)
 
-    # Full-width 1080x1040 Mobile-Optimized Chart (y=320 to y=1360)
-    chart = Image.open(stage_png).convert("RGB").resize((1080, 1040), Image.Resampling.LANCZOS)
-    canvas.paste(chart, (0, 320))
-
+    chart = Image.open(stage_png).convert("RGB").resize((1040, 1020), Image.Resampling.LANCZOS)
+    canvas.paste(chart, (10, 320))
     canvas.save(out_png)
 
 
@@ -205,8 +224,15 @@ def render_progressive_reel(smc, session_name, hook_title, spoken_script, out_mp
     total_dur = round(voice_dur + 0.4, 2)
     t2, t3, t4, t5 = detect_stage_timestamps(words, voice_dur)
 
+    # 3-step candle reveal during Stage 1 so the chart animates immediately
+    s1a = round(t2 * 0.33, 2)
+    s1b = round(t2 * 0.33, 2)
+    s1c = round(t2 - s1a - s1b, 2)
+
     stages_spec = (
-        ("assets/stage_1.png", "assets/frame_1.png", round(t2, 2)),
+        ("assets/stage_1a.png", "assets/frame_1a.png", s1a),
+        ("assets/stage_1b.png", "assets/frame_1b.png", s1b),
+        ("assets/stage_1c.png", "assets/frame_1c.png", s1c),
         ("assets/stage_2.png", "assets/frame_2.png", round(t3 - t2, 2)),
         ("assets/stage_3.png", "assets/frame_3.png", round(t4 - t3, 2)),
         ("assets/stage_4.png", "assets/frame_4.png", round(t5 - t4, 2)),
@@ -216,40 +242,26 @@ def render_progressive_reel(smc, session_name, hook_title, spoken_script, out_mp
     for st_png, fr_png, _ in stages_spec:
         build_composite_stage_frame(smc, session_name, hook_title, st_png, fr_png)
 
-        d1 = stages_spec.__getitem__(0).__getitem__(2)
-        d2 = stages_spec.__getitem__(1).__getitem__(2)
-        d3 = stages_spec.__getitem__(2).__getitem__(2)
-        d4 = stages_spec.__getitem__(3).__getitem__(2)
-        d5 = stages_spec.__getitem__(4).__getitem__(2)
+    filter_parts = ""
+    inputs = []
+    for idx, (_, fr_png, dur) in enumerate(stages_spec):
+        inputs.extend(["-loop", "1", "-i", fr_png])
+        filter_parts += f"[{idx}:v]scale=1080:1920,trim=duration={dur},setpts=PTS-STARTPTS[v{idx}];"
 
-    filter_parts = (
-        f"[0:v]scale=1080:1920,trim=duration={d1},setpts=PTS-STARTPTS[v0];"
-        f"[1:v]scale=1080:1920,trim=duration={d2},setpts=PTS-STARTPTS[v1];"
-        f"[2:v]scale=1080:1920,trim=duration={d3},setpts=PTS-STARTPTS[v2];"
-        f"[3:v]scale=1080:1920,trim=duration={d4},setpts=PTS-STARTPTS[v3];"
-        f"[4:v]scale=1080:1920,trim=duration={d5},setpts=PTS-STARTPTS[v4];"
-        f"[v0][v1][v2][v3][v4]concat=n=5:v=1:a=0[vbase];"
-    )
+    inputs.extend(["-i", voice_mp3])
+    audio_idx = len(stages_spec)
+    filter_parts += "[v0][v1][v2][v3][v4][v5][v6]concat=n=7:v=1:a=0[vbase];"
 
     overlays = render_caption_overlays(words, total_dur)
-    inputs = [
-        "-loop", "1", "-i", "assets/frame_1.png",
-        "-loop", "1", "-i", "assets/frame_2.png",
-        "-loop", "1", "-i", "assets/frame_3.png",
-        "-loop", "1", "-i", "assets/frame_4.png",
-        "-loop", "1", "-i", "assets/frame_5.png",
-        "-i", voice_mp3
-    ]
-
     last_v = "[vbase]"
     for idx, (cap_png, st_t, en_t) in enumerate(overlays):
-        in_idx = 6 + idx
+        in_idx = audio_idx + 1 + idx
         inputs.extend(["-i", cap_png])
         next_v = f"[vc{idx}]"
         filter_parts += f"{last_v}[{in_idx}:v]overlay=0:0:enable='between(t,{st_t},{en_t})'{next_v};"
         last_v = next_v
 
-    filter_parts += f"[5:a]apad=whole_dur={total_dur}[aout]"
+    filter_parts += f"[{audio_idx}:a]apad=whole_dur={total_dur}[aout]"
 
     cmd = [
         "ffmpeg", "-y",
@@ -261,7 +273,7 @@ def render_progressive_reel(smc, session_name, hook_title, spoken_script, out_mp
         out_mp4
     ]
     subprocess.run(cmd, check=True)
-    print(f"🎬 Mobile-Optimized Reel exported: {out_mp4}")
+    print(f"🎬 Dynamic Mobile Reel exported: {out_mp4}")
 
 
 def main():
