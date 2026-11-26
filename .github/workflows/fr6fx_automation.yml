@@ -7,6 +7,10 @@ on:
       - 'data/mt5_data.json'
   workflow_dispatch:         # Manual Run button for testing anytime
 
+concurrency:
+  group: fr6fx-publish-pipeline
+  cancel-in-progress: false  # Never kill a live upload mid-way; queue safely instead
+
 permissions:
   contents: write
 
@@ -61,3 +65,15 @@ jobs:
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
         run: python publish_all.py
+
+      - name: Alert Telegram on Pipeline Failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            curl -s -X POST "https://telegram.org{TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${TELEGRAM_CHAT_ID}" \
+              -d "text=🚨 FR6FX GitHub Pipeline Failed! Check logs: https://github.com{{ github.repository }}/actions/runs/${{ github.run_id }}" > /dev/null
+          fi
