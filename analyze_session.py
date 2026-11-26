@@ -132,7 +132,7 @@ Return ONLY JSON:
                     timeout=25
                 )
                 if g_resp.status_code == 200:
-                    raw_txt = g_resp.json()["choices"]["message"]["content"].strip()
+                    raw_txt = g_resp.json().get("choices").__getitem__(0).get("message").get("content").strip()
                     raw_txt = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_txt)
                     if raw_txt:
                         result = json.loads(raw_txt)

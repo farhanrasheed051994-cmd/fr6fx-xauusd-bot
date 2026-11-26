@@ -152,7 +152,7 @@ def get_smc_market_data():
 
     ema20 = round(float(df_m15["close"].ewm(span=20, adjust=False).mean().iloc[-1]), 2)
     ema50 = round(float(df_m15["close"].ewm(span=50, adjust=False).mean().iloc[-1]), 2)
-    dxy_start = float(df_dxy["close"].iloc)
+    dxy_start = float(df_dxy["close"].iloc.__getitem__(0))
     dxy_chg = round(((dxy_now - dxy_start) / dxy_start) * 100.0, 2)
     dxy_bias = f"{dxy_now} ({'+' if dxy_chg >= 0 else ''}{dxy_chg}%)"
 

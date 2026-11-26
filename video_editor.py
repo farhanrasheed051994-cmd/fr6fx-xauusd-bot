@@ -216,7 +216,12 @@ def render_progressive_reel(smc, session_name, hook_title, spoken_script, out_mp
     for st_png, fr_png, _ in stages_spec:
         build_composite_stage_frame(smc, session_name, hook_title, st_png, fr_png)
 
-    d1, d2, d3, d4, d5 = [s for s in stages_spec]
+        d1 = stages_spec.__getitem__(0).__getitem__(2)
+        d2 = stages_spec.__getitem__(1).__getitem__(2)
+        d3 = stages_spec.__getitem__(2).__getitem__(2)
+        d4 = stages_spec.__getitem__(3).__getitem__(2)
+        d5 = stages_spec.__getitem__(4).__getitem__(2)
+
     filter_parts = (
         f"[0:v]scale=1080:1920,trim=duration={d1},setpts=PTS-STARTPTS[v0];"
         f"[1:v]scale=1080:1920,trim=duration={d2},setpts=PTS-STARTPTS[v1];"
