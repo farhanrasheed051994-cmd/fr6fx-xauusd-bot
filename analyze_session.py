@@ -8,7 +8,7 @@ from google.genai import types
 from PIL import Image
 from smc_engine import get_smc_market_data
 from chart_renderer import build_progressive_chart_stages
-from seo_engine import build_seo_package
+from seo_engine import build_seo_package, load_optional_json
 
 
 def detect_session():
@@ -29,6 +29,8 @@ def clean_spoken_text(raw_text):
     txt = txt.replace("FVG", "fair value gap").replace("OB", "order block")
     txt = txt.replace("BOS", "break of structure").replace("CHoCH", "change of character")
     return txt.strip()
+
+
 def generate_ai_analysis(smc, session_name):
     today_label = datetime.now(timezone.utc).strftime("%d %b %Y")
     tg_link = (
@@ -36,6 +38,15 @@ def generate_ai_analysis(smc, session_name):
         .replace("https://", "")
         .replace("http://", "")
         .strip()
+    )
+
+    research = load_optional_json("data/research_context.json", {})
+    winning_hooks = load_optional_json("state/winning_hooks.json", {})
+
+    macro_note = research.get("top_catalyst", "Normal session liquidity flow")
+    hook_guidance = winning_hooks.get(
+        "best_hook_formula",
+        "Use specific Gold dollar numbers + curiosity gap (e.g., ASIA TRAP AT 2745?)"
     )
 
     live_p = smc["live_price"]
@@ -51,7 +62,7 @@ def generate_ai_analysis(smc, session_name):
     a_high = smc["asia_high"]
 
     prompt = f"""
-You are the lead Smart Money Concepts (SMC) strategist for @FR6FX.
+You are the lead Smart Money Concepts (SMC) strategist & viral short-form scriptwriter for @FR6FX.
 Return ONLY valid JSON based on these live MT5 XAUUSDm metrics.
 
 LIVE METRICS ({session_name} | {today_label}):
@@ -61,16 +72,18 @@ LIVE METRICS ({session_name} | {today_label}):
 - Supply Resistance Zone: ${s_low} – ${s_high} | If broken -> Next Expansion Zone: {smc['next_supply_zone']}
 - Demand Support Zone: ${d_low} – ${d_high} | If broken -> Next Expansion Zone: {smc['next_demand_zone']}
 - 50% Equilibrium: ${eq} | Primary Watch Zone: ${w_low} – ${w_high} | Invalidation: ${inv}
+- Macro / News Catalyst: {macro_note}
+- Proven Winning Hook Guidance: {hook_guidance}
 
 REQUIREMENTS:
 1. "hook_title": Bold 3-to-4 word curiosity hook in ALL CAPS, STRICTLY <= 22 chars (e.g. "ASIA TRAP AT {int(round(a_high))}?" or "GOLD NEXT ZONE {int(round(smc['bull_tp1']))}").
 2. "spoken_script": High-retention 30-second institutional voiceover (~75 words), whole integers only, NO dollar signs, say "Gold" not XAUUSD:
-   - Beat 1 (Session Trap): Explain what Asia built ({int(round(a_low))} to {int(round(a_high))}) and what London/current session is doing near {int(round(live_p))}.
-   - Beat 2 (Supply + Next Target): Say "Resistance sits at {int(round(s_high))}, and if buyers break above it, the next expansion target is {int(round(smc['bull_tp1']))}."
-   - Beat 3 (Demand + Next Target): Say "Support holds at {int(round(d_low))}, and if that breaks, the next downside target is {int(round(smc['bear_tp1']))}."
-   - Beat 4 (Watch Zone): Say "Our primary watch zone is {int(round(w_low))} to {int(round(w_high))}."
-   - Beat 5 (M5 Execution + CTA): Say "Dropping to the 5 minute chart, wait for a structure shift and never chase. Follow FR6 FX and join our free Telegram link in bio."
-3. "telegram_report": Institutional Telegram breakdown (1,100–1,400 chars) using ONLY <b>, <i>, <code> tags. Include Asia Range, Liquidity Sweep, Supply/Demand OBs, Primary Watch Zone, and BOTH Breakout Expansion Scenarios (If Resistance breaks -> Next Zone; If Support breaks -> Next Zone).
+   - Beat 1 (Pattern-Interrupt Hook & Session Trap): Start with a punchy 1-sentence hook about Gold near {int(round(live_p))} and the Asia range ({int(round(a_low))} to {int(round(a_high))}).
+   - Beat 2 (Must include word "resistance"): Explain Supply resistance at {int(round(s_high))} and next upside target {int(round(smc['bull_tp1']))} if broken.
+   - Beat 3 (Must include word "support"): Explain Demand support at {int(round(d_low))} and next downside target {int(round(smc['bear_tp1']))} if broken.
+   - Beat 4 (Must include phrase "watch zone"): Highlight the primary watch zone ({int(round(w_low))} to {int(round(w_high))}).
+   - Beat 5 (Must include "5 minute" or "dropping"): Tell traders to drop to the 5 minute chart for a structure shift, never chase, and follow FR6 FX / join our free Telegram link in bio.
+3. "telegram_report": Institutional Telegram breakdown (1,100–1,400 chars) using ONLY <b>, <i>, <code> tags. Include Asia Range, Liquidity Sweep, Macro Catalyst, Supply/Demand OBs, Primary Watch Zone, and BOTH Breakout Expansion Scenarios.
 
 Return ONLY JSON:
 {{
@@ -85,11 +98,9 @@ Return ONLY JSON:
 
     if os.environ.get("GEMINI_API_KEY"):
         client = genai.Client(
-    api_key=os.environ.get("GEMINI_API_KEY"),
-    http_options=types.HttpOptions(
-        timeout=120_000
-    )
-)
+            api_key=os.environ.get("GEMINI_API_KEY"),
+            http_options=types.HttpOptions(timeout=120_000),
+        )
         img_stage4 = Image.open("assets/stage_4.png").resize((540, 540), Image.Resampling.LANCZOS)
         img_stage5 = Image.open("assets/stage_5.png").resize((540, 540), Image.Resampling.LANCZOS)
 
@@ -100,8 +111,8 @@ Return ONLY JSON:
                     contents=(prompt, img_stage4, img_stage5),
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
-                        temperature=0.35
-                    )
+                        temperature=0.4,
+                    ),
                 )
                 if response and response.text:
                     result = json.loads(response.text)
@@ -111,8 +122,8 @@ Return ONLY JSON:
                 print(f"⚠️ {model_name} busy: {e}")
 
     if not result and os.environ.get("GROQ_API_KEY"):
-        groq_url = "https://" + ".".join(["api", "groq", "com"]) + "/openai/v1/chat/completions"
-        for g_model in ("openai/gpt-oss-120b", "openai/gpt-oss-20b"):
+        groq_url = "https://groq.com"
+        for g_model in ("llama-3.3-70b-versatile", "openai/gpt-oss-120b"):
             try:
                 g_resp = requests.post(
                     groq_url,
@@ -124,14 +135,14 @@ Return ONLY JSON:
                         "model": g_model,
                         "messages": [
                             {"role": "system", "content": "Return ONLY raw valid JSON."},
-                            {"role": "user", "content": prompt}
+                            {"role": "user", "content": prompt},
                         ],
-                        "temperature": 0.35
+                        "temperature": 0.4,
                     },
-                    timeout=25
+                    timeout=25,
                 )
                 if g_resp.status_code == 200:
-                    raw_txt = g_resp.json().get("choices").__getitem__(0).get("message").get("content").strip()
+                    raw_txt = g_resp.json()["choices"][0]["message"]["content"].strip()
                     raw_txt = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_txt)
                     if raw_txt:
                         result = json.loads(raw_txt)
@@ -177,7 +188,7 @@ Return ONLY JSON:
                 f"• 🧠 <b>Rule:</b> Wait for M5 CHoCH confirmation inside the Watch Zone—never chase.\n\n"
                 f"📲 Daily markups: https://{tg_link}\n"
                 f"⚠️ <i>Educational analysis only. Not financial advice.</i>"
-            )
+            ),
         }
 
     result["smc"] = smc
@@ -194,7 +205,7 @@ def main():
     smc = get_smc_market_data()
     build_progressive_chart_stages(smc)
     out = generate_ai_analysis(smc, session)
-    print(f"✅ Analysis complete for {session} | Hook: {out.get('hook_title')}")
+    print(f"✅ Analysis complete for {session} | Hook: {out.get('hook_title')} | R:R 1:{smc['trade_setup']['rr']}")
 
 
 if __name__ == "__main__":

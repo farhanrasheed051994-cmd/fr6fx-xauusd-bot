@@ -75,6 +75,8 @@ def find_unmitigated_fvg(df_window, live_price, min_gap=1.2):
             if np.max(highs[i + 1 :]) < top and top > live_price:
                 return {"type": "BEARISH", "low": bot, "high": top}
     return None
+
+
 def find_institutional_zones(df_window, atr, live_price):
     opens, highs, lows, closes = (
         df_window["open"].values,
@@ -82,7 +84,6 @@ def find_institutional_zones(df_window, atr, live_price):
         df_window["low"].values,
         df_window["close"].values,
     )
-    # Wider, realistic Order Block thickness (at least $4.50 on Gold)
     zone_w = round(max(atr * 0.85, 4.5), 2)
 
     sup_list = []
@@ -114,8 +115,6 @@ def find_institutional_zones(df_window, atr, live_price):
         dem_high = round(min(live_price - 1.5, dem_low + zone_w), 2)
 
     return dem_low, dem_high, sup_low, sup_high
-
-
 def get_smc_market_data():
     with open(MT5_DATA_PATH, "r", encoding="utf-8") as f:
         raw = json.load(f)
@@ -131,16 +130,13 @@ def get_smc_market_data():
     if df_h1 is not None and len(df_h1) >= 20:
         h1_sh, h1_sl = find_swing_points(df_h1.tail(60), 3, 3)
         h1_struct_tag, h1_dir, _, _ = analyze_structure(df_h1.tail(60), h1_sh, h1_sl)
-        h1_high = round(float(df_h1.tail(48)["high"].max()), 2)
-        h1_low = round(float(df_h1.tail(48)["low"].min()), 2)
     else:
         h1_struct_tag, h1_dir = "Aligned with M15", "NEUTRAL"
-        h1_high = round(float(df_m15.tail(96)["high"].max()), 2)
-        h1_low = round(float(df_m15.tail(96)["low"].min()), 2)
 
-    unique_dates = sorted(df_m15.index.normalize().unique())
-    prev_day = df_m15[df_m15.index.normalize() == unique_dates[-2]] if len(unique_dates) >= 2 else df_m15.iloc[:-96]
-    today_df = df_m15[df_m15.index.normalize() == unique_dates[-1]] if len(unique_dates) >= 2 else df_m15.tail(96)
+    df_weekdays = df_m15[df_m15.index.dayofweek != 6]
+    unique_dates = sorted(df_weekdays.index.normalize().unique())
+    prev_day = df_weekdays[df_weekdays.index.normalize() == unique_dates[-2]] if len(unique_dates) >= 2 else df_m15.iloc[:-96]
+    today_df = df_weekdays[df_weekdays.index.normalize() == unique_dates[-1]] if len(unique_dates) >= 2 else df_m15.tail(96)
 
     pdh = round(float(prev_day["high"].max()), 2)
     pdl = round(float(prev_day["low"].min()), 2)
@@ -151,7 +147,6 @@ def get_smc_market_data():
     asia_high = round(float(asia_df["high"].max()), 2) if not asia_df.empty else pdh
     asia_low = round(float(asia_df["low"].min()), 2) if not asia_df.empty else pdl
 
-    # 44-bar wide mobile chart window
     chart_df = df_m15.tail(44)
     atr_m15 = compute_atr(df_m15, 14)
     sh, sl = find_swing_points(chart_df, 3, 3)
@@ -161,14 +156,13 @@ def get_smc_market_data():
     equilibrium = round((sup_high + dem_low) / 2.0, 2)
     fvg = find_unmitigated_fvg(chart_df, live_price, min_gap=max(1.2, atr_m15 * 0.25))
 
-    # Session Liquidity Narrative
     r8 = df_m15.tail(32)
     if float(r8["high"].max()) > asia_high and live_price < asia_high:
         sweep_label = f"ASIA HIGH (${int(round(asia_high))}) SWEPT"
-        pa_signal = f"London/NY swept Asian High (${asia_high}) and rejected back inside range"
+        pa_signal = f"Session swept Asian High (${asia_high}) and rejected back inside range"
     elif float(r8["low"].min()) < asia_low and live_price > asia_low:
         sweep_label = f"ASIA LOW (${int(round(asia_low))}) SWEPT"
-        pa_signal = f"London/NY swept Asian Low (${asia_low}) and reclaimed structure"
+        pa_signal = f"Session swept Asian Low (${asia_low}) and reclaimed structure"
     elif live_price >= equilibrium:
         sweep_label = "PREMIUM LIQUIDITY"
         pa_signal = f"Price holding in Premium above ${equilibrium} 50% equilibrium"
@@ -178,7 +172,7 @@ def get_smc_market_data():
 
     ema20 = round(float(df_m15["close"].ewm(span=20, adjust=False).mean().iloc[-1]), 2)
     ema50 = round(float(df_m15["close"].ewm(span=50, adjust=False).mean().iloc[-1]), 2)
-    dxy_start = float(df_dxy["close"].iloc.__getitem__(0))
+    dxy_start = float(df_dxy["close"].iloc[0])
     dxy_chg = round(((dxy_now - dxy_start) / dxy_start) * 100.0, 2)
     dxy_bias = f"{dxy_now} ({'+' if dxy_chg >= 0 else ''}{dxy_chg}%)"
 
@@ -195,18 +189,28 @@ def get_smc_market_data():
     watch_high = dem_high if is_bull else sup_high
     invalidation = round(dem_low - max(atr_m15 * 0.6, 2.5), 2) if is_bull else round(sup_high + max(atr_m15 * 0.6, 2.5), 2)
 
-    # Next Expansion Zones if Primary Resistance or Support Breaks
     next_bull_low = round(sup_high + max(atr_m15 * 1.1, 6.0), 2)
     next_bull_high = round(next_bull_low + max(atr_m15 * 0.8, 5.0), 2)
-
     next_bear_high = round(dem_low - max(atr_m15 * 1.1, 6.0), 2)
     next_bear_low = round(next_bear_high - max(atr_m15 * 0.8, 5.0), 2)
 
+    entry_p = round((watch_low + watch_high) / 2.0, 2)
+    tp_p = round(sup_low if is_bull else dem_high, 2)
+    risk_pts = max(abs(entry_p - invalidation), 1.5)
+    if is_bull and tp_p <= entry_p:
+        tp_p = round(entry_p + risk_pts * 2.2, 2)
+    elif not is_bull and tp_p >= entry_p:
+        tp_p = round(entry_p - risk_pts * 2.2, 2)
+    rr_ratio = round(abs(tp_p - entry_p) / risk_pts, 1)
+
+    last_bar_range = round(float(df_m15["high"].iloc[-1] - df_m15["low"].iloc[-1]), 2)
+    volatility_alert = last_bar_range >= (atr_m15 * 1.8) or abs(pct_change) >= 1.25
 
     return {
         "live_price": live_price,
         "pct_change": pct_change,
         "atr_m15": round(atr_m15, 2),
+        "volatility_alert": volatility_alert,
         "h1_structure": h1_struct_tag,
         "structure_tag": structure_tag,
         "struct_dir": struct_dir,
@@ -227,6 +231,13 @@ def get_smc_market_data():
         "watch_low": watch_low,
         "watch_high": watch_high,
         "invalidation": invalidation,
+        "trade_setup": {
+            "direction": "LONG" if is_bull else "SHORT",
+            "entry": entry_p,
+            "sl": invalidation,
+            "tp": tp_p,
+            "rr": rr_ratio,
+        },
         "fvg": fvg,
         "bull_tp1": next_bull_low,
         "bull_tp2": next_bull_high,

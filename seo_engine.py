@@ -1,6 +1,17 @@
 import os
+import json
 import random
 from datetime import datetime, timezone
+
+
+def load_optional_json(path, default):
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return default
 
 
 def build_seo_package(smc, session_name, ai_data):
@@ -17,7 +28,10 @@ def build_seo_package(smc, session_name, ai_data):
         .strip()
     )
 
-    price_int = int(round(float(smc["live_price"])))
+    research = load_optional_json("data/research_context.json", {})
+    macro_headline = str(research.get("top_catalyst", "")).strip()
+    trending_kw = str(research.get("trending_keyword", "")).strip()
+
     sup_int = int(round(float(smc["supply_high"])))
     dem_int = int(round(float(smc["demand_low"])))
     wz_low = int(round(float(smc["watch_low"])))
@@ -30,18 +44,23 @@ def build_seo_package(smc, session_name, ai_data):
     session_clean = session_name.title()
     hook_title = str(ai_data.get("hook_title", f"Gold {session_clean} Setup")).title()
 
-    # 1. YOUTUBE SHORTS SEO (High-CTR Title < 92 chars + Search-Indexed Description + Clean Tags)
+    # 1. YOUTUBE SHORTS SEO
     yt_title_options = [
         f"XAUUSD Analysis Today ({date_short}) | {hook_title} #Shorts",
         f"Gold Price Prediction Today ({date_short}) | XAUUSD {session_clean} Levels #Shorts",
-        f"XAUUSD {session_clean} Setup: {bias_word} Gold Levels ({dem_int}-{sup_int}) #Shorts"
+        f"XAUUSD {session_clean} Setup: {bias_word} Gold Levels ({dem_int}-{sup_int}) #Shorts",
     ]
+    if trending_kw and len(trending_kw) <= 32:
+        yt_title_options.insert(0, f"{trending_kw} ({date_short}) | {hook_title} #Shorts")
+
     yt_title = random.choice(yt_title_options)[:92]
+    catalyst_block = f"📰 Macro Catalyst: {macro_headline}\n\n" if macro_headline else ""
 
     yt_description = (
         f"XAUUSD {session_clean} technical analysis and Gold price levels for {day_name}, {date_short}. "
         f"Live MT5 Smart Money Concepts (SMC) breakdown covering Institutional Supply ({smc['supply_zone']}), "
         f"50% Equilibrium (${smc['equilibrium']}), Demand ({smc['demand_zone']}), Fair Value Gaps, and DXY correlation.\n\n"
+        f"{catalyst_block}"
         f"📲 Free FR6 FX Telegram (Full Chart Markups & Execution Plans): https://{tg_link}\n\n"
         f"📊 XAUUSD KEY LEVELS ({date_short}):\n"
         f"• Live Gold Price: ${smc['live_price']} ({smc['bias_label']})\n"
@@ -56,7 +75,6 @@ def build_seo_package(smc, session_name, ai_data):
         f"#XAUUSD #GoldTrading #XAUUSDAnalysis #SmartMoneyConcepts #PriceAction #GoldPricePrediction #FR6FX #Shorts\n\n"
         f"⚠️ Disclaimer: Educational technical analysis by @FR6FX. Not financial advice."
     )
-
     yt_tags = [
         "XAUUSD",
         "XAUUSD analysis today",
@@ -72,29 +90,34 @@ def build_seo_package(smc, session_name, ai_data):
         "DXY gold correlation",
         f"Gold analysis {month_year}",
         "FR6 FX",
-        "Shorts"
+        "Shorts",
     ]
+    if trending_kw:
+        yt_tags.insert(1, trending_kw)
 
     yt_pinned_comment = (
         f"📲 Get the full high-res XAUUSD chart markup + Bullish/Bearish If-Then plan in our FREE Telegram: "
         f"https://{tg_link} 👇\n\n"
         f"Are you watching Buy confirmation at Demand ({dem_int}) 🟢 or Sell rejection at Supply ({sup_int}) 🔴 this session?"
     )
-    # 2. INSTAGRAM REELS SEO (Scroll-stopping 1st line + Safe non-signal hashtags)
+
+    # 2. INSTAGRAM REELS SEO
     ig_hashtag_pool = [
         "#XAUUSD", "#GoldTrading", "#SmartMoneyConcepts", "#PriceAction",
         "#XAUUSDAnalysis", "#OrderBlocks", "#LiquiditySweep", "#ForexEducation",
-        "#TechnicalAnalysis", "#DayTradingGold", "#SMCTrader", "#FR6FX"
+        "#TechnicalAnalysis", "#DayTradingGold", "#SMCTrader", "#FR6FX",
     ]
     session_tag = (
         "#LondonSession" if "LONDON" in session_name
         else ("#NewYorkSession" if "NEW YORK" in session_name else "#AsianSession")
     )
     ig_tags = " ".join(["#XAUUSD", "#GoldTrading", session_tag] + random.sample(ig_hashtag_pool, 6))
+    ig_catalyst = f"📰 Catalyst: {macro_headline}\n" if macro_headline else ""
 
     ig_caption = (
         f"{ai_data.get('hook_title', 'GOLD LIQUIDITY SETUP')} — Watch ${wz_low}–${wz_high} 👀📊\n\n"
         f"Gold is sitting at ${smc['live_price']} ({smc['bias_label']}) heading into {session_clean}. "
+        f"{ig_catalyst}"
         f"Wait for clean M5 confirmation inside the Watch Zone—never chase candles.\n\n"
         f"🎯 Institutional Map ({date_short}):\n"
         f"🔴 Supply OB: {smc['supply_zone']}\n"
@@ -108,7 +131,7 @@ def build_seo_package(smc, session_name, ai_data):
         f"{ig_tags}"
     )
 
-    # 3. FACEBOOK REELS SEO (Hook-first lead + interactive debate trigger + clean hashtags)
+    # 3. FACEBOOK REELS SEO
     fb_caption = (
         f"{ai_data.get('hook_title', 'GOLD LIQUIDITY SETUP')} | Gold at ${smc['live_price']} ({date_short}) 📈\n\n"
         f"Here is our institutional XAUUSD {session_clean} map:\n"
@@ -138,5 +161,5 @@ def build_seo_package(smc, session_name, ai_data):
         "yt_pinned_comment": yt_pinned_comment,
         "ig_caption": ig_caption,
         "fb_caption": fb_caption,
-        "tg_report_seo": tg_report_seo[:4090]
+        "tg_report_seo": tg_report_seo[:4090],
     }

@@ -3,15 +3,16 @@ import re
 import json
 import time
 import subprocess
+from datetime import datetime, timezone
 import requests
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-GOOGLE_TOKEN_URL = "https://" + ".".join(["oauth2", "googleapis", "com"]) + "/token"
-FB_GRAPH_BASE = "https://" + ".".join(["graph", "facebook", "com"]) + "/v21.0"
-FB_RUPLOAD_BASE = "https://" + ".".join(["rupload", "facebook", "com"]) + "/video-upload/v21.0"
-TG_API_BASE = "https://" + ".".join(["api", "telegram", "org"]) + "/bot"
+GOOGLE_TOKEN_URL = "https://googleapis.com"
+FB_GRAPH_BASE = "https://facebook.com"
+FB_RUPLOAD_BASE = "https://facebook.com"
+TG_API_BASE = "https://telegram.org"
 
 
 def get_secret(name):
@@ -36,7 +37,7 @@ def post_to_telegram_channel(chart_png_path, mentor_report):
     chat_id = get_secret("TELEGRAM_CHAT_ID")
     if not bot_token or not chat_id:
         print("⚠️ Telegram secrets missing—skipping Telegram post.")
-        return
+        return {"status": "SKIPPED"}
 
     photo_url = f"{TG_API_BASE}{bot_token}/sendPhoto"
     with open(chart_png_path, "rb") as img_file:
@@ -67,19 +68,25 @@ def post_to_telegram_channel(chart_png_path, mentor_report):
     ).json()
 
     if msg_resp.get("ok"):
-        print(f"✅ Telegram Mentor Analysis Posted to {chat_id}")
-    else:
-        plain_text = re.sub(r"<[^>]+>", "", mentor_report)[:4090]
-        retry = requests.post(
-            msg_url,
-            data={
-                "chat_id": chat_id,
-                "text": plain_text,
-                "disable_web_page_preview": True
-            },
-            timeout=25
-        ).json()
-        print("✅ Telegram Plain Text Fallback Result:", retry)
+        msg_id = msg_resp.get("result", {}).get("message_id")
+        print(f"✅ Telegram Mentor Analysis Posted to {chat_id} (msg_id={msg_id})")
+        return {"status": "OK", "message_id": msg_id}
+
+    plain_text = re.sub(r"<[^>]+>", "", mentor_report)[:4090]
+    retry = requests.post(
+        msg_url,
+        data={
+            "chat_id": chat_id,
+            "text": plain_text,
+            "disable_web_page_preview": True
+        },
+        timeout=25
+    ).json()
+    print("✅ Telegram Plain Text Fallback Result:", retry)
+    return {
+        "status": "OK_FALLBACK" if retry.get("ok") else "ERROR",
+        "message_id": retry.get("result", {}).get("message_id"),
+    }
 
 
 def upload_youtube_short(video_path, title, description, tags=None, pinned_comment=None):
@@ -89,7 +96,7 @@ def upload_youtube_short(video_path, title, description, tags=None, pinned_comme
 
     if not refresh_token or not client_id or not client_secret:
         print("⚠️ YouTube secrets missing—skipping YouTube upload.")
-        return
+        return {"status": "SKIPPED"}
 
     creds = Credentials(
         token=None,
@@ -116,7 +123,8 @@ def upload_youtube_short(video_path, title, description, tags=None, pinned_comme
     media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
     res = youtube.videos().insert(part="snippet,status", body=body, media_body=media).execute()
     vid_id = res["id"]
-    print(f"✅ YouTube Short Live: https://www.youtube.com/watch?v={vid_id}")
+    vid_url = f"https://youtube.com{vid_id}"
+    print(f"✅ YouTube Short Live: {vid_url}")
 
     if pinned_comment:
         try:
@@ -135,7 +143,7 @@ def upload_youtube_short(video_path, title, description, tags=None, pinned_comme
         except Exception as ce:
             print("⚠️ YouTube Comment Skipped:", ce)
 
-
+    return {"status": "OK", "video_id": vid_id, "url": vid_url}
 def create_temp_public_url(video_path, release_tag):
     subprocess.run(["gh", "release", "delete", release_tag, "-y"], stderr=subprocess.DEVNULL)
     subprocess.run(
@@ -145,8 +153,7 @@ def create_temp_public_url(video_path, release_tag):
     time.sleep(4)
     repo = get_secret("GITHUB_REPOSITORY")
     fname = os.path.basename(video_path)
-    gh_host = ".".join(["github", "com"])
-    return f"https://{gh_host}/{repo}/releases/download/{release_tag}/{fname}"
+    return f"https://github.com{repo}/releases/download/{release_tag}/{fname}"
 
 
 def upload_instagram_reel(video_url, caption):
@@ -154,7 +161,7 @@ def upload_instagram_reel(video_url, caption):
     token = get_secret("META_ACCESS_TOKEN")
     if not ig_id or not token:
         print("⚠️ Instagram secrets missing—skipping Instagram upload.")
-        return
+        return {"status": "SKIPPED"}
 
     resp = requests.post(
         f"{FB_GRAPH_BASE}/{ig_id}/media",
@@ -171,7 +178,7 @@ def upload_instagram_reel(video_url, caption):
     creation_id = r.get("id")
     if not creation_id:
         print("❌ Instagram Container Error:", r)
-        return
+        return {"status": "ERROR", "detail": r}
 
     for _ in range(18):
         time.sleep(10)
@@ -185,14 +192,16 @@ def upload_instagram_reel(video_url, caption):
             break
         if st == "ERROR":
             print("❌ Instagram Processing Failed")
-            return
+            return {"status": "ERROR", "detail": "IG_PROCESSING_ERROR"}
 
     pub_resp = requests.post(
         f"{FB_GRAPH_BASE}/{ig_id}/media_publish",
         data={"creation_id": creation_id, "access_token": token},
         timeout=30
     )
-    print("✅ Instagram Reel Live:", safe_json(pub_resp, "Instagram Publish"))
+    pub_json = safe_json(pub_resp, "Instagram Publish")
+    print("✅ Instagram Reel Live:", pub_json)
+    return {"status": "OK" if pub_json.get("id") else "ERROR", "media_id": pub_json.get("id")}
 
 
 def upload_facebook_reel(video_url, caption):
@@ -200,7 +209,7 @@ def upload_facebook_reel(video_url, caption):
     page_token = get_secret("FB_PAGE_TOKEN")
     if not page_id or not page_token:
         print("⚠️ Facebook secrets missing—skipping Facebook upload.")
-        return
+        return {"status": "SKIPPED"}
 
     start_resp = requests.post(
         f"{FB_GRAPH_BASE}/{page_id}/video_reels",
@@ -210,7 +219,7 @@ def upload_facebook_reel(video_url, caption):
     video_id = safe_json(start_resp, "Facebook Start").get("video_id")
     if not video_id:
         print("❌ Facebook Start Error")
-        return
+        return {"status": "ERROR", "detail": "FB_START_ERROR"}
 
     requests.post(
         f"{FB_RUPLOAD_BASE}/{video_id}",
@@ -229,21 +238,66 @@ def upload_facebook_reel(video_url, caption):
         },
         timeout=30
     )
-    print("✅ Facebook Reel Live:", safe_json(fin_resp, "Facebook Finish"))
+    fin_json = safe_json(fin_resp, "Facebook Finish")
+    print("✅ Facebook Reel Live:", fin_json)
+    return {"status": "OK" if fin_json.get("success") or video_id else "ERROR", "video_id": video_id}
+
+
+def save_run_state(data, results):
+    os.makedirs("state", exist_ok=True)
+    smc = data.get("smc", {})
+    seo = data.get("seo", {})
+    record = {
+        "published_utc": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        "session": data.get("session"),
+        "hook_title": data.get("hook_title"),
+        "yt_title": seo.get("yt_title"),
+        "live_price": smc.get("live_price"),
+        "bias_label": smc.get("bias_label"),
+        "trade_setup": smc.get("trade_setup"),
+        "platforms": results,
+    }
+    with open("state/last_run.json", "w", encoding="utf-8") as f:
+        json.dump(record, f, indent=2)
+
+    log_path = "state/analytics_log.json"
+    history = []
+    if os.path.exists(log_path):
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                history = json.load(f)
+        except Exception:
+            history = []
+    history.append(record)
+    with open(log_path, "w", encoding="utf-8") as f:
+        json.dump(history[-60:], f, indent=2)
 
 
 def broadcast_reel(video_path, yt_title, yt_desc, yt_tags, yt_comment, ig_caption, fb_caption, tag_name):
+    outcomes = {}
     try:
-        upload_youtube_short(video_path, yt_title, yt_desc, yt_tags, yt_comment)
+        outcomes["youtube"] = upload_youtube_short(video_path, yt_title, yt_desc, yt_tags, yt_comment)
     except Exception as e:
         print("❌ YouTube Upload Error:", e)
+        outcomes["youtube"] = {"status": "ERROR", "detail": str(e)}
 
     public_mp4_url = create_temp_public_url(video_path, tag_name)
     try:
-        upload_instagram_reel(public_mp4_url, ig_caption)
-        upload_facebook_reel(public_mp4_url, fb_caption)
+        try:
+            outcomes["instagram"] = upload_instagram_reel(public_mp4_url, ig_caption)
+        except Exception as e:
+            print("❌ Instagram Upload Error:", e)
+            outcomes["instagram"] = {"status": "ERROR", "detail": str(e)}
+
+        try:
+            outcomes["facebook"] = upload_facebook_reel(public_mp4_url, fb_caption)
+        except Exception as e:
+            print("❌ Facebook Upload Error:", e)
+            outcomes["facebook"] = {"status": "ERROR", "detail": str(e)}
     finally:
         subprocess.run(["gh", "release", "delete", tag_name, "-y"], stderr=subprocess.DEVNULL)
+
+    return outcomes
 
 
 def main():
@@ -252,15 +306,17 @@ def main():
 
     seo = data.get("seo", {})
     tg_report = seo.get("tg_report_seo") or data.get("telegram_report", "")
+    results = {}
 
     if os.path.exists("assets/telegram_chart.png") and tg_report:
         try:
-            post_to_telegram_channel("assets/telegram_chart.png", tg_report)
+            results["telegram"] = post_to_telegram_channel("assets/telegram_chart.png", tg_report)
         except Exception as e:
             print("❌ Telegram Post Error:", e)
+            results["telegram"] = {"status": "ERROR", "detail": str(e)}
 
     if os.path.exists("assets/final_reel.mp4"):
-        broadcast_reel(
+        reel_res = broadcast_reel(
             "assets/final_reel.mp4",
             seo["yt_title"],
             seo["yt_description"],
@@ -270,6 +326,10 @@ def main():
             seo["fb_caption"],
             "fr6fx-temp-main"
         )
+        results.update(reel_res)
+
+    save_run_state(data, results)
+    print("📊 Run state saved to state/last_run.json")
 
 
 if __name__ == "__main__":
