@@ -73,17 +73,18 @@ def main():
             json.dump(payload, f, indent=2)
 
         os.chdir(REPO_DIR)
-        subprocess.run(["git", "pull", "--rebase"], check=True)
         subprocess.run(["git", "add", "data/mt5_data.json"], check=True)
 
         diff = subprocess.run(["git", "diff", "--staged", "--quiet"])
         if diff.returncode != 0:
             msg = f"MT5 {GOLD_SYMBOL} data ({payload['exported_utc']} UTC)"
             subprocess.run(["git", "commit", "-m", msg], check=True)
+            subprocess.run(["git", "pull", "--rebase"], check=True)
             subprocess.run(["git", "push"], check=True)
             print(f"✅ Pushed {GOLD_SYMBOL} ({gold_bid}) & {DXY_SYMBOL} ({dxy_bid}) to GitHub.")
         else:
             print("ℹ️ No new candle changes detected.")
+
     finally:
         mt5.shutdown()
 
