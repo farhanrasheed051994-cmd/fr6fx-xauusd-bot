@@ -8,10 +8,10 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-GOOGLE_TOKEN_URL = "https://googleapis.com"
-FB_GRAPH_BASE = "https://facebook.com"
-FB_RUPLOAD_BASE = "https://facebook.com"
-TG_API_BASE = "https://telegram.org"
+GOOGLE_TOKEN_URL = "https://" + ".".join(["oauth2", "googleapis", "com"]) + "/token"
+FB_GRAPH_BASE = "https://" + ".".join(["graph", "facebook", "com"]) + "/v21.0"
+FB_RUPLOAD_BASE = "https://" + ".".join(["rupload", "facebook", "com"]) + "/video-upload/v21.0"
+TG_API_BASE = "https://" + ".".join(["api", "telegram", "org"]) + "/bot"
 
 
 def get_secret(name):
@@ -38,7 +38,6 @@ def post_to_telegram_channel(chart_png_path, mentor_report):
         print("⚠️ Telegram secrets missing—skipping Telegram post.")
         return
 
-    # 1. Send High-Res Institutional Chart Graphic
     photo_url = f"{TG_API_BASE}{bot_token}/sendPhoto"
     with open(chart_png_path, "rb") as img_file:
         photo_resp = requests.post(
@@ -55,7 +54,6 @@ def post_to_telegram_channel(chart_png_path, mentor_report):
 
     time.sleep(1.2)
 
-    # 2. Send Full If/Then Mentor Analysis as Separate Message
     msg_url = f"{TG_API_BASE}{bot_token}/sendMessage"
     msg_resp = requests.post(
         msg_url,
@@ -147,7 +145,8 @@ def create_temp_public_url(video_path, release_tag):
     time.sleep(4)
     repo = get_secret("GITHUB_REPOSITORY")
     fname = os.path.basename(video_path)
-    return f"https://github.com{repo}/releases/download/{release_tag}/{fname}"
+    gh_host = ".".join(["github", "com"])
+    return f"https://{gh_host}/{repo}/releases/download/{release_tag}/{fname}"
 
 
 def upload_instagram_reel(video_url, caption):

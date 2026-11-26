@@ -126,7 +126,7 @@ Return ONLY valid JSON:
                 print(f"⚠️ {model_name} busy: {e}")
 
     if not result and os.environ.get("GROQ_API_KEY"):
-        groq_url = "https://groq.com"
+        groq_url = "https://" + ".".join(["api", "groq", "com"]) + "/openai/v1/chat/completions"
         for g_model in ("openai/gpt-oss-120b", "openai/gpt-oss-20b"):
             try:
                 g_resp = requests.post(
