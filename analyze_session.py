@@ -123,7 +123,8 @@ Return ONLY JSON:
 
     if not result and os.environ.get("GROQ_API_KEY"):
         groq_url = "https://groq.com"
-        for g_model in ("llama-3.3-70b-versatile", "openai/gpt-oss-120b"):
+        for g_model in ("openai/gpt-oss-120b", "qwen/qwen3.6-27b", "openai/gpt-oss-20b"):
+
             try:
                 g_resp = requests.post(
                     groq_url,
