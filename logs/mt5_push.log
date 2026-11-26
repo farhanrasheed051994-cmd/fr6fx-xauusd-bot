@@ -1,0 +1,34 @@
+===== 11/26/2026 14:55:34.19 ===== 
+[main c138af9] MT5 XAUUSDm data (2026-11-26 09:55:35 UTC)
+ 1 file changed, 110 insertions(+), 110 deletions(-)
+Current branch main is up to date.
+To https://github.com/farhanrasheed051994-cmd/fr6fx-xauusd-bot.git
+   e02fe63..c138af9  main -> main
+Traceback (most recent call last):
+  File "C:\Projects\FR6_XAUUSD_Automation\mt5_push.py", line 93, in <module>
+    main()
+    ~~~~^^
+  File "C:\Projects\FR6_XAUUSD_Automation\mt5_push.py", line 84, in main
+    print(f"\u2705 Pushed {GOLD_SYMBOL} ({gold_bid}) & {DXY_SYMBOL} ({dxy_bid}) to GitHub.")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\farha\AppData\Local\Programs\Python\Python314\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2705' in position 0: character maps to <undefined>
+exit code 1 
+===== 11/26/2026 15:02:33.60 ===== 
+[main 5c5e4ca] MT5 XAUUSDm data (2026-11-26 10:02:34 UTC)
+ 1 file changed, 48 insertions(+), 48 deletions(-)
+Current branch main is up to date.
+To https://github.com/farhanrasheed051994-cmd/fr6fx-xauusd-bot.git
+   c138af9..5c5e4ca  main -> main
+✅ Pushed XAUUSDm (3572.72) & DXYm (103.748) to GitHub.
+exit code 0 
+===== 11/26/2026 17:20:01.35 ===== 
+[main 5891a86] MT5 XAUUSDm data (2026-11-26 12:20:03 UTC)
+ 1 file changed, 325 insertions(+), 325 deletions(-)
+Current branch main is up to date.
+To https://github.com/farhanrasheed051994-cmd/fr6fx-xauusd-bot.git
+   5c5e4ca..5891a86  main -> main
+✅ Pushed XAUUSDm (3569.15) & DXYm (103.772) to GitHub.
+exit code 0 

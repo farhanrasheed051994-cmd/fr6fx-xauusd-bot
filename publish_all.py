@@ -116,7 +116,7 @@ def upload_youtube_short(video_path, title, description, tags=None, pinned_comme
     media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
     res = youtube.videos().insert(part="snippet,status", body=body, media_body=media).execute()
     vid_id = res["id"]
-    print(f"✅ YouTube Short Live: https://youtube.com{vid_id}")
+    print(f"✅ YouTube Short Live: https://www.youtube.com/watch?v={vid_id}")
 
     if pinned_comment:
         try:
