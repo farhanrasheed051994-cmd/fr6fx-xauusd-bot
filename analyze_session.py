@@ -85,9 +85,11 @@ Return ONLY JSON:
 
     if os.environ.get("GEMINI_API_KEY"):
         client = genai.Client(
-            api_key=os.environ.get("GEMINI_API_KEY"),
-            http_options={"timeout": 45}
-        )
+    api_key=os.environ.get("GEMINI_API_KEY"),
+    http_options=types.HttpOptions(
+        timeout=120_000
+    )
+)
         img_stage4 = Image.open("assets/stage_4.png").resize((540, 540), Image.Resampling.LANCZOS)
         img_stage5 = Image.open("assets/stage_5.png").resize((540, 540), Image.Resampling.LANCZOS)
 
