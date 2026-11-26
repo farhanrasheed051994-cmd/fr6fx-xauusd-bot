@@ -88,7 +88,7 @@ Return ONLY JSON:
             api_key=os.environ.get("GEMINI_API_KEY"),
             http_options={"timeout": 45}
         )
-        img_stage4 = Image.open("assets/stage_4b.png").resize((540, 540), Image.Resampling.LANCZOS)
+        img_stage4 = Image.open("assets/stage_4.png").resize((540, 540), Image.Resampling.LANCZOS)
         img_stage5 = Image.open("assets/stage_5.png").resize((540, 540), Image.Resampling.LANCZOS)
 
         for model_name in ("gemini-2.5-flash", "gemini-2.5-flash-lite"):
