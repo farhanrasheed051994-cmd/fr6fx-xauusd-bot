@@ -1,8 +1,10 @@
 import os
 import re
 import json
+import shutil
 import asyncio
 import subprocess
+from datetime import datetime, timezone
 import edge_tts
 from faster_whisper import WhisperModel
 from PIL import Image, ImageDraw, ImageFont
@@ -10,13 +12,14 @@ from PIL import Image, ImageDraw, ImageFont
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
-def load_font_safe(path, size):
+def load_font(path, size):
     for candidate in (path, "C:/Windows/Fonts/arialbd.ttf", "arialbd.ttf"):
         try:
             return ImageFont.truetype(candidate, size)
         except Exception:
             continue
     return ImageFont.load_default()
+
 
 def get_audio_duration(audio_path):
     cmd = (
@@ -134,8 +137,6 @@ def detect_stage_timestamps(words, total_dur):
     t4 = max(t3 + 1.8, min(t4, total_dur - 3.0))
     t5 = max(t4 + 1.5, min(t5, total_dur - 1.8))
     return (t2, t3, t4, t5)
-
-
 def render_caption_overlays(words, total_dur):
     os.makedirs("assets/caps", exist_ok=True)
     f_cap = load_font(FONT_BOLD, 46)
@@ -184,6 +185,8 @@ def render_caption_overlays(words, total_dur):
             overlays.append((cap_path, start_t, end_t))
 
     return overlays
+
+
 def build_composite_stage_frame(smc, session_name, hook_title, stage_png, out_png, progress_pct=0.0):
     canvas = Image.new("RGB", (1080, 1920), (11, 14, 20))
     draw = ImageDraw.Draw(canvas)
@@ -249,15 +252,16 @@ def export_telegram_chart_graphic(smc, session_name, date_label, chart_png, out_
         draw.text((x1 + 16, 1294), val, fill=val_c, font=f_card_val)
 
     canvas.save(out_png)
-
-
-def render_progressive_reel(smc, session_name, hook_title, spoken_script, out_mp4):
+def render_progressive_reel(smc, session_name, hook_title, spoken_script, out_mp4, prebuilt_audio=None):
     os.makedirs("assets", exist_ok=True)
     voice_mp3 = "assets/voiceover.mp3"
 
-    asyncio.run(generate_voiceover(spoken_script, voice_mp3))
-    voice_dur = get_audio_duration(voice_mp3)
-    words = extract_word_captions(voice_mp3)
+    if prebuilt_audio:
+        voice_dur, words = prebuilt_audio
+    else:
+        asyncio.run(generate_voiceover(spoken_script, voice_mp3))
+        voice_dur = get_audio_duration(voice_mp3)
+        words = extract_word_captions(voice_mp3)
 
     total_dur = round(voice_dur + 0.4, 2)
     t2, t3, t4, t5 = detect_stage_timestamps(words, voice_dur)
@@ -274,10 +278,9 @@ def render_progressive_reel(smc, session_name, hook_title, spoken_script, out_mp
     for st_png, fr_png, _, pct in stages_spec:
         build_composite_stage_frame(smc, session_name, hook_title, st_png, fr_png, progress_pct=pct)
 
-    d1, d2, d3, d4, d5 = [s[2] for s in stages_spec]
+    d1, d2, d3, d4, d5 = [s for s in stages_spec]
     off1, off2, off3, off4 = round(t2, 2), round(t3, 2), round(t4, 2), round(t5, 2)
 
-    # Smooth 60fps Ken Burns subtle camera zoom/pan per stage for human-edited feel
     f1, f2, f3, f4, f5 = [max(int(d * 60) + 15, 60) for d in (d1, d2, d3, d4, d5)]
     filter_parts = (
         f"[0:v]scale=1140:2026,zoompan=z='min(zoom+0.0005,1.05)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={f1}:s=1080x1920:fps=60,trim=duration={d1},setpts=PTS-STARTPTS[v0];"
@@ -309,7 +312,6 @@ def render_progressive_reel(smc, session_name, hook_title, spoken_script, out_mp
         filter_parts += f"{last_v}[{in_idx}:v]overlay=0:0:enable='between(t,{st_t},{en_t})'{next_v};"
         last_v = next_v
 
-    # Procedural subtle transition pop SFX at stage changes mixed cleanly under voiceover
     ms2, ms3, ms4, ms5 = [int(t * 1000) for t in (off1, off2, off3, off4)]
     filter_parts += (
         f"aevalsrc='0.06*sin(2*PI*520*t)*exp(-18*t)':s=44100:d=0.22[pop];"
@@ -335,6 +337,62 @@ def render_progressive_reel(smc, session_name, hook_title, spoken_script, out_mp
     print(f"🎬 60fps TradingView-Style Motion Reel exported: {out_mp4}")
 
 
+def render_with_remotion_or_fallback(smc, session_name, hook_title, spoken_script, out_mp4):
+    os.makedirs("assets", exist_ok=True)
+    voice_mp3 = "assets/voiceover.mp3"
+    asyncio.run(generate_voiceover(spoken_script, voice_mp3))
+    voice_dur = get_audio_duration(voice_mp3)
+    words = extract_word_captions(voice_mp3)
+    total_dur = round(voice_dur + 0.4, 2)
+    t2, t3, t4, t5 = detect_stage_timestamps(words, voice_dur)
+
+    if os.path.exists("remotion/node_modules"):
+        try:
+            os.makedirs("remotion/public", exist_ok=True)
+            shutil.copyfile(voice_mp3, "remotion/public/voiceover.mp3")
+            with open("data/mt5_data.json", "r", encoding="utf-8") as f:
+                mt5_raw = json.load(f)
+
+            def to_tv_bars(bars):
+                out = []
+                for b in bars[-45:]:
+                    ts = int(datetime.strptime(b["time"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp())
+                    out.append({"time": ts, "open": b["open"], "high": b["high"], "low": b["low"], "close": b["close"]})
+                return out
+
+            props = {
+                "session": session_name,
+                "hookTitle": hook_title,
+                "durationSec": total_dur,
+                "stageTimes": [t2, t3, t4, t5],
+                "smc": smc,
+                "candles15m": to_tv_bars(mt5_raw.get("xau_m15", [])),
+                "candles5m": to_tv_bars(mt5_raw.get("xau_m5", [])),
+                "captions": words,
+            }
+            with open("assets/remotion_props.json", "w", encoding="utf-8") as pf:
+                json.dump(props, pf)
+
+            subprocess.run(
+                [
+                    "npx", "remotion", "render", "src/index.ts", "TradingViewReel",
+                    os.path.abspath(out_mp4),
+                    "--props", os.path.abspath("assets/remotion_props.json"),
+                    "--fps=60", "--codec=h264"
+                ],
+                cwd="remotion",
+                check=True,
+            )
+            print(f"🎬 60fps TradingView Lightweight Charts Reel rendered via Remotion: {out_mp4}")
+            return
+        except Exception as re_err:
+            print(f"⚠️ Remotion fallback triggered ({re_err}); using FFmpeg motion renderer...")
+
+    render_progressive_reel(
+        smc, session_name, hook_title, spoken_script, out_mp4, prebuilt_audio=(voice_dur, words)
+    )
+
+
 def main():
     with open("assets/analysis_output.json", "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -348,7 +406,7 @@ def main():
     export_telegram_chart_graphic(
         smc, session_name, date_label, "assets/stage_5.png", "assets/telegram_chart.png"
     )
-    render_progressive_reel(
+    render_with_remotion_or_fallback(
         smc, session_name, hook_title, spoken_script, "assets/final_reel.mp4"
     )
 

@@ -36,6 +36,17 @@ jobs:
       - name: Install Python Packages
         run: pip install -r requirements.txt
 
+      - name: Set up Node.js 22 for Remotion
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Remotion & TradingView Lightweight Charts
+        run: |
+          if [ -f "remotion/package.json" ]; then
+            cd remotion && npm install --no-audit --no-fund
+          fi
+
       - name: Phase 1 - Run Multi-Timeframe MT5 SMC & AI Analysis
         env:
           PYTHONUNBUFFERED: "1"
@@ -92,4 +103,3 @@ jobs:
               -d "chat_id=${TELEGRAM_CHAT_ID}" \
               -d "text=🚨 FR6FX GitHub Pipeline Failed! Check logs: https://github.com{{ github.repository }}/actions/runs/${{ github.run_id }}" > /dev/null
           fi
-
