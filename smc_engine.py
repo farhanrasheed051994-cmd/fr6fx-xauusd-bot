@@ -37,6 +37,25 @@ def find_swing_points(df, left=3, right=3):
     return swing_highs, swing_lows
 
 
+def detect_equal_liquidity_pools(swing_highs, swing_lows, live_price, tol=3.5):
+    """Detects resting Equal Highs (EQH / BSL) and Equal Lows (EQL / SSL) pools."""
+    eqh = None
+    for i in range(len(swing_highs) - 1):
+        for j in range(i + 1, len(swing_highs)):
+            p1, p2 = swing_highs[i]["price"], swing_highs[j]["price"]
+            if abs(p1 - p2) <= tol and max(p1, p2) > live_price:
+                eqh = round(max(p1, p2), 2)
+
+    eql = None
+    for i in range(len(swing_lows) - 1):
+        for j in range(i + 1, len(swing_lows)):
+            p1, p2 = swing_lows[i]["price"], swing_lows[j]["price"]
+            if abs(p1 - p2) <= tol and min(p1, p2) < live_price:
+                eql = round(min(p1, p2), 2)
+
+    return eqh, eql
+
+
 def analyze_structure(df, swing_highs, swing_lows):
     close_now = float(df["close"].iloc[-1])
     if len(swing_highs) < 2 or len(swing_lows) < 2:
@@ -88,7 +107,8 @@ def find_institutional_zones(df_window, atr, live_price):
 
     sup_list = []
     for i in range(2, len(df_window) - 2):
-        if closes[i] > opens[i] and closes[i + 1] < opens[i + 1]:
+        # Require bearish displacement candle after bullish OB candle
+        if closes[i] > opens[i] and closes[i + 1] < opens[i + 1] and (opens[i + 1] - closes[i + 1]) >= atr * 0.5:
             ob_h = round(float(highs[i]), 2)
             ob_l = round(min(float(opens[i]), round(ob_h - zone_w, 2)), 2)
             if ob_l > live_price + 1.0:
@@ -102,7 +122,8 @@ def find_institutional_zones(df_window, atr, live_price):
 
     dem_list = []
     for i in range(2, len(df_window) - 2):
-        if closes[i] < opens[i] and closes[i + 1] > opens[i + 1]:
+        # Require bullish displacement candle after bearish OB candle
+        if closes[i] < opens[i] and closes[i + 1] > opens[i + 1] and (closes[i + 1] - opens[i + 1]) >= atr * 0.5:
             ob_l = round(float(lows[i]), 2)
             ob_h = round(max(float(opens[i]), round(ob_l + zone_w, 2)), 2)
             if ob_h < live_price - 1.0:
@@ -147,32 +168,46 @@ def get_smc_market_data():
     asia_high = round(float(asia_df["high"].max()), 2) if not asia_df.empty else pdh
     asia_low = round(float(asia_df["low"].min()), 2) if not asia_df.empty else pdl
 
-    chart_df = df_m15.tail(44)
+    chart_df = df_m15.tail(48)
     atr_m15 = compute_atr(df_m15, 14)
     sh, sl = find_swing_points(chart_df, 3, 3)
     structure_tag, struct_dir, _, _ = analyze_structure(chart_df, sh, sl)
+    eqh_pool, eql_pool = detect_equal_liquidity_pools(sh, sl, live_price, tol=max(2.5, atr_m15 * 0.45))
 
     dem_low, dem_high, sup_low, sup_high = find_institutional_zones(chart_df, atr_m15, live_price)
     equilibrium = round((sup_high + dem_low) / 2.0, 2)
     fvg = find_unmitigated_fvg(chart_df, live_price, min_gap=max(1.2, atr_m15 * 0.25))
 
+    # OTE (Optimal Trade Entry: 61.8% - 78.6% Fib pocket of dealing range)
+    dealing_span = max(sup_high - dem_low, 8.0)
+    bull_ote_high = round(sup_high - dealing_span * 0.618, 2)
+    bull_ote_low = round(sup_high - dealing_span * 0.786, 2)
+    bear_ote_low = round(dem_low + dealing_span * 0.618, 2)
+    bear_ote_high = round(dem_low + dealing_span * 0.786, 2)
+
     r8 = df_m15.tail(32)
     if float(r8["high"].max()) > asia_high and live_price < asia_high:
         sweep_label = f"ASIA HIGH (${int(round(asia_high))}) SWEPT"
-        pa_signal = f"Session swept Asian High (${asia_high}) and rejected back inside range"
+        pa_signal = f"Swept Asian High (${asia_high}) BSL & displaced back inside range"
     elif float(r8["low"].min()) < asia_low and live_price > asia_low:
         sweep_label = f"ASIA LOW (${int(round(asia_low))}) SWEPT"
-        pa_signal = f"Session swept Asian Low (${asia_low}) and reclaimed structure"
+        pa_signal = f"Swept Asian Low (${asia_low}) SSL & reclaimed internal structure"
+    elif eqh_pool and abs(eqh_pool - live_price) <= atr_m15 * 1.4:
+        sweep_label = f"EQH POOL AT ${int(round(eqh_pool))}"
+        pa_signal = f"Price magnetizing toward Equal Highs (${eqh_pool}) buy-side liquidity"
+    elif eql_pool and abs(eql_pool - live_price) <= atr_m15 * 1.4:
+        sweep_label = f"EQL POOL AT ${int(round(eql_pool))}"
+        pa_signal = f"Price magnetizing toward Equal Lows (${eql_pool}) sell-side liquidity"
     elif live_price >= equilibrium:
         sweep_label = "PREMIUM LIQUIDITY"
-        pa_signal = f"Price holding in Premium above ${equilibrium} 50% equilibrium"
+        pa_signal = f"Trading in Premium above ${equilibrium} 50% equilibrium"
     else:
         sweep_label = "DISCOUNT LIQUIDITY"
-        pa_signal = f"Price holding in Discount below ${equilibrium} 50% equilibrium"
+        pa_signal = f"Trading in Discount below ${equilibrium} 50% equilibrium"
 
     ema20 = round(float(df_m15["close"].ewm(span=20, adjust=False).mean().iloc[-1]), 2)
     ema50 = round(float(df_m15["close"].ewm(span=50, adjust=False).mean().iloc[-1]), 2)
-    dxy_start = float(df_dxy["close"].iloc[0])
+    dxy_start = float(next(iter(df_dxy["close"])))
     dxy_chg = round(((dxy_now - dxy_start) / dxy_start) * 100.0, 2)
     dxy_bias = f"{dxy_now} ({'+' if dxy_chg >= 0 else ''}{dxy_chg}%)"
 
@@ -181,12 +216,15 @@ def get_smc_market_data():
     score += 15 if struct_dir == "BULLISH" else (-15 if struct_dir == "BEARISH" else 0)
     score += 10 if ema20 > ema50 else -10
     score += 10 if dxy_chg < -0.05 else (-10 if dxy_chg > 0.05 else 0)
+    if fvg:
+        score += 5 if fvg["type"] == "BULLISH" else -5
 
     bias_label = "BULLISH BIAS" if score >= 60 else ("BEARISH BIAS" if score <= 40 else "RANGE SETUP")
     is_bull = score >= 50
 
     watch_low = dem_low if is_bull else sup_low
     watch_high = dem_high if is_bull else sup_high
+    ote_zone = f"${bull_ote_low} – ${bull_ote_high}" if is_bull else f"${bear_ote_low} – ${bear_ote_high}"
     invalidation = round(dem_low - max(atr_m15 * 0.6, 2.5), 2) if is_bull else round(sup_high + max(atr_m15 * 0.6, 2.5), 2)
 
     next_bull_low = round(sup_high + max(atr_m15 * 1.1, 6.0), 2)
@@ -218,6 +256,9 @@ def get_smc_market_data():
         "pdl": pdl,
         "asia_high": asia_high,
         "asia_low": asia_low,
+        "eqh_pool": eqh_pool,
+        "eql_pool": eql_pool,
+        "ote_zone": ote_zone,
         "sweep_label": sweep_label,
         "strong_high": sup_high,
         "strong_low": dem_low,

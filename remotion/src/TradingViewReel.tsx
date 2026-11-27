@@ -5,7 +5,6 @@ import {
   staticFile,
   useCurrentFrame,
   useVideoConfig,
-  interpolate,
   spring,
 } from 'remotion';
 import { createChart, ColorType, CrosshairMode } from 'lightweight-charts';
@@ -53,15 +52,6 @@ export const TradingViewReel: React.FC<ReelProps> = ({
   const [t2 = 6, t3 = 13, t4 = 20, t5 = 25] = stageTimes;
   const stage = t >= t5 ? 5 : t >= t4 ? 4 : t >= t3 ? 3 : t >= t2 ? 2 : 1;
 
-  // Smooth human-edited camera zoom & pan on each stage change
-  const zoomScale = interpolate(
-    t,
-    [0, t2, t2 + 0.4, t4, t4 + 0.4, t5, t5 + 0.5, durationSec],
-    [1.0, 1.03, 1.01, 1.04, 1.02, 1.06, 1.04, 1.08],
-    { extrapolateRight: 'clamp' }
-  );
-
-  // Live price pulse simulation on final candle
   const tickPulse = Math.sin(frame * 0.25) * 0.35;
   const activeCandles = stage >= 5 && candles5m.length > 0 ? candles5m : candles15m;
 
@@ -70,20 +60,29 @@ export const TradingViewReel: React.FC<ReelProps> = ({
     chartContainerRef.current.innerHTML = '';
 
     const chart = createChart(chartContainerRef.current, {
-      width: 1036,
-      height: 1090,
+      width: 940,
+      height: 890,
       layout: {
         background: { type: ColorType.Solid, color: '#131722' },
-        textColor: '#787b86',
-        fontSize: 16,
+        textColor: '#94a3b8',
+        fontSize: 15,
       },
       grid: {
         vertLines: { color: '#1e222d' },
         horzLines: { color: '#1e222d' },
       },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: '#2a2e39' },
-      timeScale: { borderColor: '#2a2e39', timeVisible: true, secondsVisible: false },
+      rightPriceScale: {
+        borderColor: '#2a2e39',
+        scaleMargins: { top: 0.12, bottom: 0.12 },
+      },
+      timeScale: {
+        borderColor: '#2a2e39',
+        timeVisible: true,
+        secondsVisible: false,
+        rightOffset: 11,
+        barSpacing: 16,
+      },
     });
 
     const series = chart.addCandlestickSeries({
@@ -94,10 +93,9 @@ export const TradingViewReel: React.FC<ReelProps> = ({
       wickDownColor: '#f23645',
     });
 
-    // Progressive replay: reveal last 6 candles live during Stage 1, full chart by Stage 2+
     const visibleCount =
       stage === 1
-        ? Math.max(activeCandles.length - 6 + Math.min(6, Math.floor((t / Math.max(t2, 1)) * 7)), 10)
+        ? Math.max(activeCandles.length - 6 + Math.min(6, Math.floor((t / Math.max(t2, 1)) * 7)), 12)
         : activeCandles.length;
 
     const sliced = activeCandles.slice(0, visibleCount).map((c, idx, arr) => {
@@ -115,7 +113,6 @@ export const TradingViewReel: React.FC<ReelProps> = ({
 
     series.setData(sliced as any);
 
-    // TradingView Price Lines for SMC Zones & Risk/Reward Setup
     if (stage >= 2) {
       series.createPriceLine({
         price: Number(smc.supply_high),
@@ -169,52 +166,51 @@ export const TradingViewReel: React.FC<ReelProps> = ({
         lineWidth: 2,
         lineStyle: 1,
         axisLabelVisible: true,
-        title: `TARGET (1:${smc.trade_setup.rr} R:R)`,
+        title: `TP 1:${smc.trade_setup.rr} R:R`,
       });
     }
 
-    chart.timeScale().fitContent();
     return () => chart.remove();
   }, [stage, Math.floor(frame / 4)]);
-
-  const activeChunkIdx = Math.floor(
-    Math.max(0, captions.findIndex((c) => t >= c.start && t <= c.end)) / 3
-  );
-  const currentChunk = captions.slice(activeChunkIdx * 3, activeChunkIdx * 3 + 3);
+  const sortedCaptions = [...captions].sort((a, b) => a.start - b.start);
+  const foundIdx = sortedCaptions.findIndex((c) => t >= c.start && t <= c.end + 0.15);
+  const activeChunkIdx = foundIdx >= 0 ? Math.floor(foundIdx / 3) : -1;
+  const currentChunk = activeChunkIdx >= 0 ? sortedCaptions.slice(activeChunkIdx * 3, activeChunkIdx * 3 + 3) : [];
   const lastCandle = activeCandles[activeCandles.length - 1];
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#0b0e14', fontFamily: 'sans-serif' }}>
       <Audio src={staticFile('voiceover.mp3')} />
 
-      {/* Top Hook Pill */}
-      <div style={{ position: 'absolute', top: 170, width: '100%', display: 'flex', justifyContent: 'center', zIndex: 10 }}>
+      {/* Top Hook Pill (Below mobile status bar & search icons) */}
+      <div style={{ position: 'absolute', top: 155, left: 24, right: 110, display: 'flex', justifyContent: 'center', zIndex: 10 }}>
         <div
           style={{
             backgroundColor: '#181c27',
             border: '3px solid #facc15',
-            borderRadius: 20,
-            padding: '14px 36px',
+            borderRadius: 18,
+            padding: '12px 28px',
             color: '#facc15',
-            fontSize: 42,
+            fontSize: 38,
             fontWeight: 900,
-            letterSpacing: 1,
+            letterSpacing: 0.8,
+            textAlign: 'center',
           }}
         >
           {hookTitle}
         </div>
       </div>
 
-      {/* Session & Live Spot Strip */}
+      {/* Session & Live Spot Strip (Inset from right action buttons) */}
       <div
         style={{
           position: 'absolute',
-          top: 268,
+          top: 242,
           left: 26,
-          right: 115,
+          right: 112,
           display: 'flex',
           justifyContent: 'space-between',
-          fontSize: 24,
+          fontSize: 21,
           fontWeight: 800,
         }}
       >
@@ -222,31 +218,29 @@ export const TradingViewReel: React.FC<ReelProps> = ({
         <span style={{ color: '#38bdf8' }}>XAUUSD ${(Number(smc.live_price) + tickPulse).toFixed(2)}</span>
       </div>
 
-      {/* TradingView Lightweight Charts Container */}
+      {/* TradingView Chart Card (Safe-zone inset: left=22, width=944 so right icons never cover price scale) */}
       <div
         style={{
           position: 'absolute',
-          top: 306,
-          left: 20,
-          width: 1040,
-          height: 1142,
-          borderRadius: 20,
+          top: 278,
+          left: 22,
+          width: 944,
+          height: 944,
+          borderRadius: 18,
           border: '2px solid #2a2e39',
           backgroundColor: '#131722',
           overflow: 'hidden',
-          transform: `scale(${zoomScale})`,
         }}
       >
-        {/* TradingView OHLC Header */}
         <div
           style={{
-            height: 50,
-            padding: '0 20px',
+            height: 46,
+            padding: '0 16px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             borderBottom: '1px solid #2a2e39',
-            fontSize: 20,
+            fontSize: 18,
             fontWeight: 800,
           }}
         >
@@ -261,34 +255,36 @@ export const TradingViewReel: React.FC<ReelProps> = ({
       </div>
 
       {/* Progress Bar */}
-      <div style={{ position: 'absolute', top: 1456, left: 20, width: 1040, height: 8, backgroundColor: '#1e222d' }}>
-        <div style={{ width: `${Math.min(100, (t / durationSec) * 100)}%`, height: '100%', backgroundColor: '#facc15' }} />
+      <div style={{ position: 'absolute', top: 1232, left: 22, width: 944, height: 7, backgroundColor: '#1e222d', borderRadius: 4 }}>
+        <div style={{ width: `${Math.min(100, (t / durationSec) * 100)}%`, height: '100%', backgroundColor: '#facc15', borderRadius: 4 }} />
       </div>
 
-      {/* Karaoke Captions */}
+      {/* Karaoke Captions (Positioned at top: 1255 — safely ABOVE YouTube Shorts & IG/FB bottom UI) */}
       {currentChunk.length > 0 && (
-        <div style={{ position: 'absolute', top: 1482, left: 40, right: 100, display: 'flex', justifyContent: 'center' }}>
+        <div style={{ position: 'absolute', top: 1255, left: 22, right: 112, display: 'flex', justifyContent: 'center', zIndex: 15 }}>
           <div
             style={{
-              backgroundColor: 'rgba(10, 14, 23, 0.94)',
+              backgroundColor: 'rgba(10, 14, 23, 0.96)',
               border: '3px solid #facc15',
-              borderRadius: 20,
-              padding: '14px 30px',
+              borderRadius: 18,
+              padding: '12px 26px',
               display: 'flex',
-              gap: 16,
+              gap: 14,
+              flexWrap: 'wrap',
+              justifyContent: 'center',
             }}
           >
             {currentChunk.map((w, idx) => {
-              const active = t >= w.start && t <= w.end;
+              const active = t >= w.start && t <= w.end + 0.1;
               const pop = spring({ frame: frame - w.start * fps, fps, config: { damping: 14 } });
               return (
                 <span
                   key={idx}
                   style={{
-                    fontSize: 46,
+                    fontSize: 42,
                     fontWeight: 900,
                     color: active ? '#facc15' : '#ffffff',
-                    transform: active ? `scale(${1 + pop * 0.08})` : 'scale(1)',
+                    transform: active ? `scale(${1 + pop * 0.06})` : 'scale(1)',
                   }}
                 >
                   {w.word.toUpperCase()}
