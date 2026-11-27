@@ -9,9 +9,8 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-GOOGLE_TOKEN_URL = "/".join(["https:/", "://googleapis.com", "token"])
-FB_GRAPH_BASE = "/".join(["https:/", "graph.facebook.com", "v21.0"])
-FB_RUPLOAD_BASE = "/".join(["https:/", "rupload.facebook.com", "video-upload", "v21.0"])
+FB_GRAPH_BASE = "/".join(["https:/", "://facebook.com", "v21.0"])
+FB_RUPLOAD_BASE = "/".join(["https:/", "://facebook.com", "video-upload", "v21.0"])
 TG_API_BASE = "/".join(["https:/", "api.telegram.org", "bot"])
 
 
@@ -101,7 +100,6 @@ def upload_youtube_short(video_path, title, description, tags=None, pinned_comme
     creds = Credentials(
         token=None,
         refresh_token=refresh_token,
-        token_uri=GOOGLE_TOKEN_URL,
         client_id=client_id,
         client_secret=client_secret
     )
@@ -150,10 +148,10 @@ def create_temp_public_url(video_path, release_tag):
         ["gh", "release", "create", release_tag, video_path, "--title", "FR6FX Media", "--notes", "Auto"],
         check=True
     )
-    time.sleep(4)
+    time.sleep(8)
     repo = get_secret("GITHUB_REPOSITORY")
     fname = os.path.basename(video_path)
-    return f"https://github.com{repo}/releases/download/{release_tag}/{fname}"
+    return "/".join(["https:/", "github.com", repo, "releases", "download", release_tag, fname])
 
 
 def upload_instagram_reel(video_url, caption):
@@ -184,15 +182,16 @@ def upload_instagram_reel(video_url, caption):
         time.sleep(10)
         st_resp = requests.get(
             f"{FB_GRAPH_BASE}/{creation_id}",
-            params={"fields": "status_code", "access_token": token},
+            params={"fields": "status_code,status", "access_token": token},
             timeout=20
         )
-        st = safe_json(st_resp, "Instagram Status").get("status_code")
+        st_data = safe_json(st_resp, "Instagram Status")
+        st = st_data.get("status_code")
         if st == "FINISHED":
             break
         if st == "ERROR":
-            print("❌ Instagram Processing Failed")
-            return {"status": "ERROR", "detail": "IG_PROCESSING_ERROR"}
+            print("❌ Instagram Processing Failed:", st_data)
+            return {"status": "ERROR", "detail": st_data}
 
     pub_resp = requests.post(
         f"{FB_GRAPH_BASE}/{ig_id}/media_publish",
@@ -204,7 +203,7 @@ def upload_instagram_reel(video_url, caption):
     return {"status": "OK" if pub_json.get("id") else "ERROR", "media_id": pub_json.get("id")}
 
 
-def upload_facebook_reel(video_url, caption):
+def upload_facebook_reel(video_path, caption):
     page_id = get_secret("FB_PAGE_ID")
     page_token = get_secret("FB_PAGE_TOKEN")
     if not page_id or not page_token:
@@ -221,11 +220,20 @@ def upload_facebook_reel(video_url, caption):
         print("❌ Facebook Start Error")
         return {"status": "ERROR", "detail": "FB_START_ERROR"}
 
-    requests.post(
-        f"{FB_RUPLOAD_BASE}/{video_id}",
-        headers={"Authorization": f"OAuth {page_token}", "file_url": video_url},
-        timeout=30
-    )
+    file_size = os.path.getsize(video_path)
+    with open(video_path, "rb") as vf:
+        up_resp = requests.post(
+            f"{FB_RUPLOAD_BASE}/{video_id}",
+            headers={
+                "Authorization": f"OAuth {page_token}",
+                "offset": "0",
+                "file_size": str(file_size),
+                "Content-Type": "application/octet-stream",
+            },
+            data=vf,
+            timeout=120
+        )
+    print("📤 Facebook Binary Upload:", safe_json(up_resp, "Facebook Upload"))
 
     fin_resp = requests.post(
         f"{FB_GRAPH_BASE}/{page_id}/video_reels",
@@ -240,7 +248,7 @@ def upload_facebook_reel(video_url, caption):
     )
     fin_json = safe_json(fin_resp, "Facebook Finish")
     print("✅ Facebook Reel Live:", fin_json)
-    return {"status": "OK" if fin_json.get("success") or video_id else "ERROR", "video_id": video_id}
+    return {"status": "OK" if fin_json.get("success") else "ERROR", "video_id": video_id, "detail": fin_json}
 
 
 def save_run_state(data, results):
@@ -281,19 +289,18 @@ def broadcast_reel(video_path, yt_title, yt_desc, yt_tags, yt_comment, ig_captio
         print("❌ YouTube Upload Error:", e)
         outcomes["youtube"] = {"status": "ERROR", "detail": str(e)}
 
+    try:
+        outcomes["facebook"] = upload_facebook_reel(video_path, fb_caption)
+    except Exception as e:
+        print("❌ Facebook Upload Error:", e)
+        outcomes["facebook"] = {"status": "ERROR", "detail": str(e)}
+
     public_mp4_url = create_temp_public_url(video_path, tag_name)
     try:
-        try:
-            outcomes["instagram"] = upload_instagram_reel(public_mp4_url, ig_caption)
-        except Exception as e:
-            print("❌ Instagram Upload Error:", e)
-            outcomes["instagram"] = {"status": "ERROR", "detail": str(e)}
-
-        try:
-            outcomes["facebook"] = upload_facebook_reel(public_mp4_url, fb_caption)
-        except Exception as e:
-            print("❌ Facebook Upload Error:", e)
-            outcomes["facebook"] = {"status": "ERROR", "detail": str(e)}
+        outcomes["instagram"] = upload_instagram_reel(public_mp4_url, ig_caption)
+    except Exception as e:
+        print("❌ Instagram Upload Error:", e)
+        outcomes["instagram"] = {"status": "ERROR", "detail": str(e)}
     finally:
         subprocess.run(["gh", "release", "delete", tag_name, "-y"], stderr=subprocess.DEVNULL)
 

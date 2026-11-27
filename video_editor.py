@@ -278,7 +278,7 @@ def render_progressive_reel(smc, session_name, hook_title, spoken_script, out_mp
     for st_png, fr_png, _, pct in stages_spec:
         build_composite_stage_frame(smc, session_name, hook_title, st_png, fr_png, progress_pct=pct)
 
-    d1, d2, d3, d4, d5 = [s[2] for s in stages_spec]
+    d1, d2, d3, d4, d5 = [s for s in stages_spec]
     off1, off2, off3, off4 = round(t2, 2), round(t3, 2), round(t4, 2), round(t5, 2)
 
     f1, f2, f3, f4, f5 = [max(int(d * 60) + 15, 60) for d in (d1, d2, d3, d4, d5)]
@@ -378,7 +378,7 @@ def render_with_remotion_or_fallback(smc, session_name, hook_title, spoken_scrip
                     "npx", "remotion", "render", "src/index.ts", "TradingViewReel",
                     os.path.abspath(out_mp4),
                     "--props", os.path.abspath("assets/remotion_props.json"),
-                    "--fps=60", "--codec=h264"
+                    "--fps=60", "--codec=h264", "--pixel-format=yuv420p", "--audio-codec=aac"
                 ],
                 cwd="remotion",
                 check=True,
