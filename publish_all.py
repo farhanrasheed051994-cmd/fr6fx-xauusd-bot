@@ -150,7 +150,7 @@ def create_temp_public_url(video_path, release_tag):
         ["gh", "release", "create", release_tag, video_path, "--title", "FR6FX Media", "--notes", "Auto"],
         check=True
     )
-    time.sleep(5)
+    time.sleep(10)
     repo = get_secret("GITHUB_REPOSITORY")
     fname = os.path.basename(video_path)
     gh_host = ".".join(["github", "com"])
@@ -323,7 +323,7 @@ def main():
             seo["yt_title"],
             seo["yt_description"],
             seo.get("yt_tags"),
-            seo.get("yt_pinned_comment"),
+            seo.get("None"),
             seo["ig_caption"],
             seo["fb_caption"],
             "fr6fx-temp-main"

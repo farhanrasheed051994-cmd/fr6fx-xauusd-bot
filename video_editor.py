@@ -31,8 +31,8 @@ def get_audio_duration(audio_path):
 
 async def generate_voiceover(text, out_mp3):
     tts_text = (
-        text.replace("FR6 FX", "F R 6 F X")
-        .replace("FR6FX", "F R 6 F X")
+        text.replace("FR6 FX", "F. R. 6. F. X.")
+        .replace("FR6FX", "F. R. 6. F. X.")
         .replace("link in bio", "link in our profile")
     )
     voices = ("en-US-AndrewNeural", "en-US-ChristopherNeural", "en-GB-RyanNeural")
@@ -77,27 +77,33 @@ def extract_word_captions(audio_path):
 
     merged = []
     i = 0
-    brand_tokens = {"F", "R", "6", "FX", "6FX", "FR6", "FR6FX", "OR"}
+    brand_start = {"F", "ARE", "FR", "FR6", "FR6FX"}
+    brand_cont = {"F", "R", "6", "FX", "6FX", "FR6", "FR6FX", "OR", "ARE", "X"}
     while i < len(raw_words):
         cur = raw_words[i]["word"]
         cur_up = cur.upper()
 
-        if cur_up == "F" and i + 1 < len(raw_words) and raw_words[i + 1]["word"].upper() in brand_tokens:
+        if cur_up in brand_start and i + 1 < len(raw_words) and raw_words[i + 1]["word"].upper() in brand_cont:
             end_t = raw_words[i + 1]["end"]
             j = i + 1
-            while j < len(raw_words) and raw_words[j]["word"].upper() in brand_tokens:
+            while j < len(raw_words) and raw_words[j]["word"].upper() in brand_cont:
                 end_t = raw_words[j]["end"]
                 j += 1
             merged.append({"word": "FR6 FX", "start": raw_words[i]["start"], "end": end_t})
             i = j
             continue
 
+        if cur_up in ("FR6FX", "6FX"):
+            merged.append({"word": "FR6 FX", "start": raw_words[i]["start"], "end": raw_words[i]["end"]})
+            i += 1
+            continue
+
+        # Merge split 4-digit Gold prices like ("3", "651") or ("36", "51") -> "3651"
         if (
             i + 1 < len(raw_words)
             and cur.isdigit()
-            and len(cur) == 2
             and raw_words[i + 1]["word"].isdigit()
-            and len(raw_words[i + 1]["word"]) == 2
+            and len(cur) + len(raw_words[i + 1]["word"]) == 4
         ):
             merged.append({
                 "word": cur + raw_words[i + 1]["word"],
@@ -165,13 +171,13 @@ def render_caption_overlays(words, total_dur):
             total_w = sum(widths) + space_w * (len(tokens) - 1)
 
             pad_x, pad_y = 32, 14
-            box_w = min(880, int(total_w + pad_x * 2))
-            x_box = int(510 - box_w * 0.5)
-            y_box = 1435
+            box_w = min(920, int(total_w + pad_x * 2))
+            x_box = int(540 - box_w * 0.5)
+            y_box = 1285
 
             draw.rounded_rectangle(
                 (x_box, y_box, x_box + box_w, y_box + 82),
-                radius=18, fill=(10, 14, 23, 242), outline=(250, 204, 21, 235), width=3
+                radius=18, fill=(10, 14, 23, 245), outline=(250, 204, 21, 235), width=3
             )
 
             cur_x = x_box + pad_x
@@ -198,23 +204,23 @@ def build_composite_stage_frame(smc, session_name, hook_title, stage_png, out_pn
     hw = draw.textlength(hook_clean, font=f_hook)
     pill_w = int(hw + 64)
     px1 = int((1080 - pill_w) * 0.5)
-    draw.rounded_rectangle((px1, 178, px1 + pill_w, 246), radius=18, fill=(24, 28, 39), outline=(250, 204, 21), width=2)
-    draw.text(((1080 - hw) * 0.5, 191), hook_clean, fill=(250, 204, 21), font=f_hook)
+    draw.rounded_rectangle((px1, 152, px1 + pill_w, 222), radius=18, fill=(24, 28, 39), outline=(250, 204, 21), width=2)
+    draw.text(((1080 - hw) * 0.5, 165), hook_clean, fill=(250, 204, 21), font=f_hook)
 
     live_p = smc["live_price"]
     bias_l = str(smc["bias_label"])
-    draw.text((28, 266), f"{session_name} • {bias_l}", fill=(148, 163, 184), font=f_meta)
+    draw.text((26, 242), f"{session_name} • {bias_l}", fill=(148, 163, 184), font=f_meta)
     meta_right = f"XAUUSD ${live_p}"
     rw = draw.textlength(meta_right, font=f_meta)
-    draw.text((955 - rw, 266), meta_right, fill=(56, 189, 248), font=f_meta)
+    draw.text((1054 - rw, 242), meta_right, fill=(56, 189, 248), font=f_meta)
 
-    draw.rounded_rectangle((16, 298, 1064, 1406), radius=18, fill=(19, 23, 34), outline=(42, 46, 57), width=2)
-    chart = Image.open(stage_png).convert("RGB").resize((1040, 1100), Image.Resampling.LANCZOS)
-    canvas.paste(chart, (20, 302))
+    draw.rounded_rectangle((20, 276, 1060, 1250), radius=18, fill=(19, 23, 34), outline=(42, 46, 57), width=2)
+    chart = Image.open(stage_png).convert("RGB").resize((1032, 966), Image.Resampling.LANCZOS)
+    canvas.paste(chart, (24, 280))
 
-    draw.rectangle((20, 1412, 1060, 1420), fill=(30, 34, 45))
-    bar_w = int(1040 * max(0.06, min(1.0, progress_pct)))
-    draw.rectangle((20, 1412, 20 + bar_w, 1420), fill=(250, 204, 21))
+    draw.rectangle((22, 1258, 1058, 1266), fill=(30, 34, 45))
+    bar_w = int(1036 * max(0.06, min(1.0, progress_pct)))
+    draw.rectangle((22, 1258, 22 + bar_w, 1266), fill=(250, 204, 21))
 
     canvas.save(out_png)
 
@@ -329,8 +335,10 @@ def render_progressive_reel(smc, session_name, hook_title, spoken_script, out_mp
         *inputs,
         "-filter_complex", filter_parts,
         "-map", last_v, "-map", "[aout]",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p",
-        "-r", "60", "-c:a", "aac", "-b:a", "192k", "-t", str(total_dur),
+        "-c:v", "libx264", "-profile:v", "high", "-level", "4.1",
+        "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        "-r", "60", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-t", str(total_dur),
         out_mp4
     ]
     subprocess.run(cmd, check=True)
@@ -373,14 +381,28 @@ def render_with_remotion_or_fallback(smc, session_name, hook_title, spoken_scrip
             with open("assets/remotion_props.json", "w", encoding="utf-8") as pf:
                 json.dump(props, pf)
 
+            raw_remotion = "assets/remotion_raw.mp4"
             subprocess.run(
                 [
                     "npx", "remotion", "render", "src/index.ts", "TradingViewReel",
-                    os.path.abspath(out_mp4),
+                    os.path.abspath(raw_remotion),
                     "--props", os.path.abspath("assets/remotion_props.json"),
                     "--fps=60", "--codec=h264", "--pixel-format=yuv420p", "--audio-codec=aac"
                 ],
                 cwd="remotion",
+                check=True,
+            )
+            # Normalize MP4 with +faststart & 48kHz AAC so Instagram Reels ingests 100% reliably
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-i", raw_remotion,
+                    "-c:v", "libx264", "-profile:v", "high", "-level", "4.1",
+                    "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+                    "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+                    out_mp4,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 check=True,
             )
             print(f"🎬 60fps TradingView Lightweight Charts Reel rendered via Remotion: {out_mp4}")
