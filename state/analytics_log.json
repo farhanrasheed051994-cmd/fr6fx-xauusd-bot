@@ -130,5 +130,38 @@
         "video_id": "1661192322411265"
       }
     }
+  },
+  {
+    "published_utc": "2026-11-27 14:14:03",
+    "session": "NEW YORK SESSION",
+    "hook_title": "GOLD TRAP AT 3669?",
+    "yt_title": "Gold Price Prediction Today (27 Nov 2026) | XAUUSD New York Session Levels #Shorts",
+    "live_price": 3669.09,
+    "bias_label": "RANGE SETUP",
+    "trade_setup": {
+      "direction": "LONG",
+      "entry": 3657.12,
+      "sl": 3650.23,
+      "tp": 3673.52,
+      "rr": 2.4
+    },
+    "platforms": {
+      "telegram": {
+        "status": "OK",
+        "message_id": 57
+      },
+      "youtube": {
+        "status": "ERROR",
+        "detail": "The credentials do not contain the necessary fields need to refresh the access token. You must specify refresh_token, token_uri, client_id, and client_secret."
+      },
+      "facebook": {
+        "status": "ERROR",
+        "detail": "Invalid URL 'https://://facebook.com/v21.0/1240380052486811/video_reels': No host supplied"
+      },
+      "instagram": {
+        "status": "ERROR",
+        "detail": "Invalid URL 'https://://facebook.com/v21.0/17841422594197746/media': No host supplied"
+      }
+    }
   }
 ]
