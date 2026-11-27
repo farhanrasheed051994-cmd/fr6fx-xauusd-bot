@@ -6,7 +6,7 @@ const defaultProps: ReelProps = {
   session: 'NEW YORK SESSION',
   hookTitle: 'GOLD LIQUIDITY MAP',
   durationSec: 30,
-  stageTimes:,
+  stageTimes: new Array(6, 13, 20, 25),
   smc: {
     live_price: 2745.5,
     bias_label: 'BEARISH BIAS',
@@ -19,9 +19,9 @@ const defaultProps: ReelProps = {
     equilibrium: 2742,
     trade_setup: { direction: 'SHORT', entry: 2753, sl: 2759, tp: 2734, rr: 3.1 },
   },
-  candles15m: [],
-  candles5m: [],
-  captions: [],
+  candles15m: new Array(),
+  candles5m: new Array(),
+  captions: new Array(),
 };
 
 export const RemotionRoot: React.FC = () => {
