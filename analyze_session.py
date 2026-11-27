@@ -88,7 +88,7 @@ REQUIREMENTS:
    - Beat 2 (Must include word "resistance"): Explain Supply resistance at {int(round(s_high))} and next upside expansion target {int(round(smc['bull_tp1']))} if broken.
    - Beat 3 (Must include word "support"): Explain Demand support at {int(round(d_low))} and next downside expansion target {int(round(smc['bear_tp1']))} if broken.
    - Beat 4 (Must include phrase "watch zone"): Highlight the primary watch zone ({int(round(w_low))} to {int(round(w_high))}) and Fib OTE confluence.
-   - Beat 5 (Must include "5 minute" or "dropping"): Tell traders to drop to the 5 minute chart for a change of character, never chase, and follow FR6 FX / join our free Telegram link in bio.
+   - Beat 5 (Must include "5 minute" or "dropping"): Tell traders to drop to the 5 minute chart for confirmation, never chase, and end with exact words: "Follow FR6 FX and join our free Telegram link in bio."
 3. "telegram_report": Institutional Telegram breakdown (1,150–1,450 chars) using ONLY <b>, <i>, <code> tags. Include Asia Range, Liquidity Pools (EQH/EQL), Unmitigated FVG, OTE Fib Pocket, Macro Catalyst, Supply/Demand OBs, Primary Watch Zone, and BOTH Breakout Expansion Scenarios.
 
 Return ONLY JSON:

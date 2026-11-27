@@ -60,12 +60,12 @@ export const TradingViewReel: React.FC<ReelProps> = ({
     chartContainerRef.current.innerHTML = '';
 
     const chart = createChart(chartContainerRef.current, {
-      width: 1032,
-      height: 920,
+      width: 1064,
+      height: 1000,
       layout: {
         background: { type: ColorType.Solid, color: '#131722' },
-        textColor: '#94a3b8',
-        fontSize: 16,
+        textColor: '#cbd5e1',
+        fontSize: 22,
       },
       grid: {
         vertLines: { color: '#1e222d' },
@@ -80,8 +80,8 @@ export const TradingViewReel: React.FC<ReelProps> = ({
         borderColor: '#2a2e39',
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: 14,
-        barSpacing: 16,
+        rightOffset: 10,
+        barSpacing: 20,
       },
     });
 
@@ -117,27 +117,27 @@ export const TradingViewReel: React.FC<ReelProps> = ({
       series.createPriceLine({
         price: Number(smc.supply_high),
         color: '#f23645',
-        lineWidth: 2,
+        lineWidth: 3,
         lineStyle: 2,
         axisLabelVisible: true,
-        title: 'SUPPLY / BSL',
+        title: 'SUPPLY',
       });
     }
     if (stage >= 3) {
       series.createPriceLine({
         price: Number(smc.demand_low),
         color: '#089981',
-        lineWidth: 2,
+        lineWidth: 3,
         lineStyle: 2,
         axisLabelVisible: true,
-        title: 'DEMAND / SSL',
+        title: 'DEMAND',
       });
     }
     if (stage >= 4) {
       series.createPriceLine({
         price: Number(smc.watch_high),
         color: '#facc15',
-        lineWidth: 2,
+        lineWidth: 3,
         lineStyle: 0,
         axisLabelVisible: true,
         title: 'WATCH ZONE',
@@ -147,33 +147,33 @@ export const TradingViewReel: React.FC<ReelProps> = ({
       series.createPriceLine({
         price: Number(smc.trade_setup.entry),
         color: '#38bdf8',
-        lineWidth: 2,
+        lineWidth: 3,
         lineStyle: 0,
         axisLabelVisible: true,
-        title: `${smc.trade_setup.direction} ENTRY`,
+        title: `${smc.trade_setup.direction}`,
       });
       series.createPriceLine({
         price: Number(smc.trade_setup.sl),
         color: '#f23645',
-        lineWidth: 2,
+        lineWidth: 3,
         lineStyle: 1,
         axisLabelVisible: true,
-        title: 'STOP LOSS',
+        title: 'SL',
       });
       series.createPriceLine({
         price: Number(smc.trade_setup.tp),
         color: '#089981',
-        lineWidth: 2,
+        lineWidth: 3,
         lineStyle: 1,
         axisLabelVisible: true,
-        title: `TP 1:${smc.trade_setup.rr} R:R`,
+        title: `TP 1:${smc.trade_setup.rr}`,
       });
     }
 
     return () => chart.remove();
   }, [stage, Math.floor(frame / 4)]);
   const sortedCaptions = [...captions].sort((a, b) => a.start - b.start);
-  const foundIdx = sortedCaptions.findIndex((c) => t >= c.start && t <= c.end + 0.15);
+  const foundIdx = sortedCaptions.findIndex((c) => t >= c.start && t <= c.end + 0.12);
   const activeChunkIdx = foundIdx >= 0 ? Math.floor(foundIdx / 3) : -1;
   const currentChunk = activeChunkIdx >= 0 ? sortedCaptions.slice(activeChunkIdx * 3, activeChunkIdx * 3 + 3) : [];
   const lastCandle = activeCandles[activeCandles.length - 1];
@@ -183,15 +183,15 @@ export const TradingViewReel: React.FC<ReelProps> = ({
       <Audio src={staticFile('voiceover.mp3')} />
 
       {/* Top Hook Pill */}
-      <div style={{ position: 'absolute', top: 152, left: 22, right: 22, display: 'flex', justifyContent: 'center', zIndex: 10 }}>
+      <div style={{ position: 'absolute', top: 136, left: 16, right: 16, display: 'flex', justifyContent: 'center', zIndex: 10 }}>
         <div
           style={{
             backgroundColor: '#181c27',
             border: '3px solid #facc15',
             borderRadius: 18,
-            padding: '12px 32px',
+            padding: '12px 34px',
             color: '#facc15',
-            fontSize: 40,
+            fontSize: 44,
             fontWeight: 900,
             letterSpacing: 0.8,
             textAlign: 'center',
@@ -205,12 +205,12 @@ export const TradingViewReel: React.FC<ReelProps> = ({
       <div
         style={{
           position: 'absolute',
-          top: 242,
-          left: 26,
-          right: 26,
+          top: 228,
+          left: 16,
+          right: 16,
           display: 'flex',
           justifyContent: 'space-between',
-          fontSize: 22,
+          fontSize: 25,
           fontWeight: 800,
         }}
       >
@@ -218,15 +218,15 @@ export const TradingViewReel: React.FC<ReelProps> = ({
         <span style={{ color: '#38bdf8' }}>XAUUSD ${(Number(smc.live_price) + tickPulse).toFixed(2)}</span>
       </div>
 
-      {/* Full-Width TradingView Chart Card */}
+      {/* Full-Bleed Mobile TradingView Chart Card */}
       <div
         style={{
           position: 'absolute',
-          top: 278,
-          left: 22,
-          width: 1036,
-          height: 970,
-          borderRadius: 18,
+          top: 268,
+          left: 8,
+          width: 1064,
+          height: 1054,
+          borderRadius: 16,
           border: '2px solid #2a2e39',
           backgroundColor: '#131722',
           overflow: 'hidden',
@@ -234,13 +234,13 @@ export const TradingViewReel: React.FC<ReelProps> = ({
       >
         <div
           style={{
-            height: 46,
+            height: 52,
             padding: '0 18px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             borderBottom: '1px solid #2a2e39',
-            fontSize: 19,
+            fontSize: 22,
             fontWeight: 800,
           }}
         >
@@ -255,21 +255,21 @@ export const TradingViewReel: React.FC<ReelProps> = ({
       </div>
 
       {/* Progress Bar */}
-      <div style={{ position: 'absolute', top: 1258, left: 22, width: 1036, height: 7, backgroundColor: '#1e222d', borderRadius: 4 }}>
+      <div style={{ position: 'absolute', top: 1332, left: 8, width: 1064, height: 8, backgroundColor: '#1e222d', borderRadius: 4 }}>
         <div style={{ width: `${Math.min(100, (t / durationSec) * 100)}%`, height: '100%', backgroundColor: '#facc15', borderRadius: 4 }} />
       </div>
 
-      {/* Karaoke Captions (Centered in safe zone above Shorts/Reels UI) */}
+      {/* Karaoke Captions (Safely above Shorts/Reels UI) */}
       {currentChunk.length > 0 && (
-        <div style={{ position: 'absolute', top: 1282, left: 32, right: 32, display: 'flex', justifyContent: 'center', zIndex: 15 }}>
+        <div style={{ position: 'absolute', top: 1354, left: 20, right: 20, display: 'flex', justifyContent: 'center', zIndex: 15 }}>
           <div
             style={{
               backgroundColor: 'rgba(10, 14, 23, 0.96)',
               border: '3px solid #facc15',
               borderRadius: 18,
-              padding: '12px 28px',
+              padding: '14px 30px',
               display: 'flex',
-              gap: 14,
+              gap: 16,
               flexWrap: 'wrap',
               justifyContent: 'center',
             }}
@@ -281,7 +281,7 @@ export const TradingViewReel: React.FC<ReelProps> = ({
                 <span
                   key={idx}
                   style={{
-                    fontSize: 44,
+                    fontSize: 48,
                     fontWeight: 900,
                     color: active ? '#facc15' : '#ffffff',
                     transform: active ? `scale(${1 + pop * 0.06})` : 'scale(1)',

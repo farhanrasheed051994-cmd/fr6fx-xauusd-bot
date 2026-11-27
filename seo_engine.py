@@ -147,12 +147,7 @@ def build_seo_package(smc, session_name, ai_data):
     )
 
     # 4. TELEGRAM CHANNEL SEO FOOTER
-    tg_seo_footer = f"\n\n🔍 #XAUUSD #GOLD #SMC {session_tag} #DXY #PriceAction #FR6FX"
-    base_tg_report = ai_data.get("telegram_report", "").strip()
-    if "#XAUUSD" not in base_tg_report:
-        tg_report_seo = f"{base_tg_report}{tg_seo_footer}"
-    else:
-        tg_report_seo = base_tg_report
+    tg_report_seo = ai_data.get("telegram_report", "").strip()
 
     return {
         "yt_title": yt_title,
