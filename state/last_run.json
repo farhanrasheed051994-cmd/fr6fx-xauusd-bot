@@ -1,5 +1,5 @@
 {
-  "published_utc": "2026-11-27 14:14:03",
+  "published_utc": "2026-11-27 14:29:26",
   "session": "NEW YORK SESSION",
   "hook_title": "GOLD TRAP AT 3669?",
   "yt_title": "Gold Price Prediction Today (27 Nov 2026) | XAUUSD New York Session Levels #Shorts",
@@ -15,19 +15,25 @@
   "platforms": {
     "telegram": {
       "status": "OK",
-      "message_id": 57
+      "message_id": 59
     },
     "youtube": {
-      "status": "ERROR",
-      "detail": "The credentials do not contain the necessary fields need to refresh the access token. You must specify refresh_token, token_uri, client_id, and client_secret."
-    },
-    "facebook": {
-      "status": "ERROR",
-      "detail": "Invalid URL 'https://://facebook.com/v21.0/1240380052486811/video_reels': No host supplied"
+      "status": "OK",
+      "video_id": "ej33GFOrHVc",
+      "url": "https://www.youtube.com/watch?v=ej33GFOrHVc"
     },
     "instagram": {
-      "status": "ERROR",
-      "detail": "Invalid URL 'https://://facebook.com/v21.0/17841422594197746/media': No host supplied"
+      "status": "OK",
+      "media_id": "18123026326968298"
+    },
+    "facebook": {
+      "status": "OK",
+      "video_id": "1175664475410630",
+      "detail": {
+        "success": true,
+        "message": "Video is Processing. To check the status of the video, please follow the instructions listed at https://developers.facebook.com/docs/video-api/guides/reels-publishing#get-the-upload-status.",
+        "post_id": "122137411089400356"
+      }
     }
   }
 }
