@@ -64,5 +64,38 @@
         "detail": "FB_START_ERROR"
       }
     }
+  },
+  {
+    "published_utc": "2026-11-27 13:46:38",
+    "session": "NEW YORK SESSION",
+    "hook_title": "GOLD TRAP AT 3669?",
+    "yt_title": "XAUUSD Analysis Today (27 Nov 2026) | Gold Trap At 3669? #Shorts",
+    "live_price": 3669.09,
+    "bias_label": "RANGE SETUP",
+    "trade_setup": {
+      "direction": "LONG",
+      "entry": 3657.12,
+      "sl": 3650.23,
+      "tp": 3673.52,
+      "rr": 2.4
+    },
+    "platforms": {
+      "telegram": {
+        "status": "OK",
+        "message_id": 53
+      },
+      "youtube": {
+        "status": "ERROR",
+        "detail": "Unable to find the server at "
+      },
+      "instagram": {
+        "status": "ERROR",
+        "detail": "Invalid URL 'https://://facebook.com/17841422594197746/media': No host supplied"
+      },
+      "facebook": {
+        "status": "ERROR",
+        "detail": "Invalid URL 'https://://facebook.com/1240380052486811/video_reels': No host supplied"
+      }
+    }
   }
 ]
