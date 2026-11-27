@@ -104,7 +104,7 @@ Return ONLY JSON:
         img_stage4 = Image.open("assets/stage_4.png").resize((540, 540), Image.Resampling.LANCZOS)
         img_stage5 = Image.open("assets/stage_5.png").resize((540, 540), Image.Resampling.LANCZOS)
 
-        for model_name in ("gemini-2.5-flash", "gemini-2.5-flash-lite"):
+        for model_name in ("gemini-3.8-flash", "gemini-3.5-flash-lite"):
             try:
                 response = client.models.generate_content(
                     model=model_name,
