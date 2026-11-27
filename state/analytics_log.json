@@ -245,5 +245,44 @@
         }
       }
     }
+  },
+  {
+    "published_utc": "2026-11-27 15:26:05",
+    "session": "NEW YORK SESSION",
+    "hook_title": "ASIA TRAP AT 3667?",
+    "yt_title": "XAUUSD Analysis Today (27 Nov 2026) | Asia Trap At 3667? #Shorts",
+    "live_price": 3640.71,
+    "bias_label": "RANGE SETUP",
+    "trade_setup": {
+      "direction": "SHORT",
+      "entry": 3646.68,
+      "sl": 3657.38,
+      "tp": 3629.9,
+      "rr": 1.6
+    },
+    "platforms": {
+      "telegram": {
+        "status": "OK",
+        "message_id": 63
+      },
+      "youtube": {
+        "status": "OK",
+        "video_id": "L1C9p0qqbJo",
+        "url": "https://www.youtube.com/watch?v=L1C9p0qqbJo"
+      },
+      "instagram": {
+        "status": "OK",
+        "media_id": "18224227216343743"
+      },
+      "facebook": {
+        "status": "OK",
+        "video_id": "1170112552190963",
+        "detail": {
+          "success": true,
+          "message": "Video is Processing. To check the status of the video, please follow the instructions listed at https://developers.facebook.com/docs/video-api/guides/reels-publishing#get-the-upload-status.",
+          "post_id": "122137430343400356"
+        }
+      }
+    }
   }
 ]
