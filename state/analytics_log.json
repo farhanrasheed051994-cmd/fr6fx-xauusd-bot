@@ -202,5 +202,48 @@
         }
       }
     }
+  },
+  {
+    "published_utc": "2026-11-27 14:59:03",
+    "session": "NEW YORK SESSION",
+    "hook_title": "ASIA TRAP AT 3667?",
+    "yt_title": "Gold Price Prediction Today (27 Nov 2026) | XAUUSD New York Session Levels #Shorts",
+    "live_price": 3640.71,
+    "bias_label": "RANGE SETUP",
+    "trade_setup": {
+      "direction": "SHORT",
+      "entry": 3646.68,
+      "sl": 3657.38,
+      "tp": 3629.9,
+      "rr": 1.6
+    },
+    "platforms": {
+      "telegram": {
+        "status": "OK",
+        "message_id": 61
+      },
+      "youtube": {
+        "status": "OK",
+        "video_id": "tFVnNPa7-Xs",
+        "url": "https://www.youtube.com/watch?v=tFVnNPa7-Xs"
+      },
+      "instagram": {
+        "status": "ERROR",
+        "detail": {
+          "id": "18137668834753140",
+          "status": "Error: Media upload has failed with error code 2207077",
+          "status_code": "ERROR"
+        }
+      },
+      "facebook": {
+        "status": "OK",
+        "video_id": "2301428720784358",
+        "detail": {
+          "success": true,
+          "message": "Video is Processing. To check the status of the video, please follow the instructions listed at https://developers.facebook.com/docs/video-api/guides/reels-publishing#get-the-upload-status.",
+          "post_id": "122137416147400356"
+        }
+      }
+    }
   }
 ]
