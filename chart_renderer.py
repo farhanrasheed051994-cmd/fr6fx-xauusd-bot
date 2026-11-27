@@ -34,7 +34,7 @@ def load_mt5_candles(tf_key, bars=38):
 def get_asia_span(df):
     asia_idxs = [i for i, ts in enumerate(df.index) if 0 <= ts.hour < 7]
     if len(asia_idxs) >= 2:
-        return asia_idxs, asia_idxs[-1]
+        return min(asia_idxs), max(asia_idxs)
     return None, None
 
 
