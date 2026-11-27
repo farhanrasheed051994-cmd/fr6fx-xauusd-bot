@@ -9,10 +9,10 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-GOOGLE_TOKEN_URL = "https://" + "://googleapis.com"
-FB_GRAPH_BASE = "https://" + "://facebook.com"
-FB_RUPLOAD_BASE = "https://" + "://facebook.com"
-TG_API_BASE = "https://" + "api.telegram.org/bot"
+GOOGLE_TOKEN_URL = "/".join(["https:/", "://googleapis.com", "token"])
+FB_GRAPH_BASE = "/".join(["https:/", "graph.facebook.com", "v21.0"])
+FB_RUPLOAD_BASE = "/".join(["https:/", "rupload.facebook.com", "video-upload", "v21.0"])
+TG_API_BASE = "/".join(["https:/", "api.telegram.org", "bot"])
 
 
 def get_secret(name):
