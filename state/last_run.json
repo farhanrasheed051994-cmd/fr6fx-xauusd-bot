@@ -1,8 +1,8 @@
 {
-  "published_utc": "2026-11-27 15:26:05",
-  "session": "NEW YORK SESSION",
-  "hook_title": "ASIA TRAP AT 3667?",
-  "yt_title": "XAUUSD Analysis Today (27 Nov 2026) | Asia Trap At 3667? #Shorts",
+  "published_utc": "2026-11-28 11:37:22",
+  "session": "New York Session",
+  "hook_title": "ASIA LIQUIDITY SWEPT",
+  "yt_title": "Huge Trap Above $3666! Drop Next? #XAUUSD #Gold",
   "live_price": 3640.71,
   "bias_label": "RANGE SETUP",
   "trade_setup": {
@@ -13,27 +13,26 @@
     "rr": 1.6
   },
   "platforms": {
-    "telegram": {
-      "status": "OK",
-      "message_id": 63
-    },
     "youtube": {
       "status": "OK",
-      "video_id": "L1C9p0qqbJo",
-      "url": "https://www.youtube.com/watch?v=L1C9p0qqbJo"
+      "video_id": "w39w6VWiHpY",
+      "url": "https://www.youtube.com/watch?v=w39w6VWiHpY"
     },
     "instagram": {
       "status": "OK",
-      "media_id": "18224227216343743"
+      "media_id": "18470266255139462"
     },
     "facebook": {
       "status": "OK",
-      "video_id": "1170112552190963",
+      "video_id": "1152869434271991",
       "detail": {
         "success": true,
         "message": "Video is Processing. To check the status of the video, please follow the instructions listed at https://developers.facebook.com/docs/video-api/guides/reels-publishing#get-the-upload-status.",
-        "post_id": "122137430343400356"
+        "post_id": "122137579773400356"
       }
+    },
+    "telegram": {
+      "status": "OK"
     }
   }
 }

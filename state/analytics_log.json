@@ -284,5 +284,43 @@
         }
       }
     }
+  },
+  {
+    "published_utc": "2026-11-28 11:37:22",
+    "session": "New York Session",
+    "hook_title": "ASIA LIQUIDITY SWEPT",
+    "yt_title": "Huge Trap Above $3666! Drop Next? #XAUUSD #Gold",
+    "live_price": 3640.71,
+    "bias_label": "RANGE SETUP",
+    "trade_setup": {
+      "direction": "SHORT",
+      "entry": 3646.68,
+      "sl": 3657.38,
+      "tp": 3629.9,
+      "rr": 1.6
+    },
+    "platforms": {
+      "youtube": {
+        "status": "OK",
+        "video_id": "w39w6VWiHpY",
+        "url": "https://www.youtube.com/watch?v=w39w6VWiHpY"
+      },
+      "instagram": {
+        "status": "OK",
+        "media_id": "18470266255139462"
+      },
+      "facebook": {
+        "status": "OK",
+        "video_id": "1152869434271991",
+        "detail": {
+          "success": true,
+          "message": "Video is Processing. To check the status of the video, please follow the instructions listed at https://developers.facebook.com/docs/video-api/guides/reels-publishing#get-the-upload-status.",
+          "post_id": "122137579773400356"
+        }
+      },
+      "telegram": {
+        "status": "OK"
+      }
+    }
   }
 ]

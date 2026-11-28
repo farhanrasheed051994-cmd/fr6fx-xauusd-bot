@@ -1,0 +1,10 @@
+{
+  "institutional_bias": "BEARISH",
+  "confidence_score": 75,
+  "top_catalyst": "Gold swept the Asian Session Buy-Side Liquidity at $3666.73 and experienced sharp bearish displacement back inside the range.",
+  "news_risk_warning": "Clear macro window",
+  "market_narrative": "Gold has completed a classic Smart Money Concepts manipulation phase by sweeping above the Asian High ($3666.73) to grab retail breakout liquidity. Price has since displaced downward, printing a bearish BOS on the M15 and reacting inside the current Supply Order Block. With DXY showing mild strength (+0.18%), the path of least resistance favors a corrective rotation back toward the internal range equilibrium and discount demand zones.",
+  "execution_plan": "Look for a lower timeframe M5 CHoCH (Change of Character) within the $3642.25 - $3651.12 Supply Watch Zone. Enter short upon retest of the unmitigated bearish FVG ($3649.81 - $3655.25), targeting the demand liquidity pool at $3629.9 with a strict stop loss above invalidation at $3657.38.",
+  "alert_worthy": true,
+  "private_alert_html": "<b>\ud83d\udea8 GOLDBRAIN SMC ALERT: NEW YORK SESSION \ud83d\udea8</b><br><b>Setup:</b> Premium SHORT Reaction<br><b>Zone:</b> $3642.25 - $3651.12 (Supply OB)<br><b>Entry:</b> $3646.68 | <b>SL:</b> $3657.38 | <b>TP:</b> $3629.90 (1:1.6)<br><b>Context:</b> Asian High BSL swept at $3666.73 with M15 bearish displacement."
+}
