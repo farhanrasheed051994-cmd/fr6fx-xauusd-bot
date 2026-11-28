@@ -9,7 +9,7 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
 def _tg_url(method):
     clean_tok = re.sub(r"[\r\n\t\"']", "", TELEGRAM_BOT_TOKEN).strip()
-    clean_tok = re.sub(r"^https?://[^/]+/bot", "", clean_tok)
+    clean_tok = re.sub(r"^(?:https?://)?[^/]+/bot", "", clean_tok)
     clean_tok = re.sub(r"^bot(?=\d+:)", "", clean_tok)
     return f"https://telegram.org{clean_tok}/{method}"
 

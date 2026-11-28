@@ -6,7 +6,7 @@ from google import genai
 from google.genai import types
 from pypdf import PdfReader
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/").removesuffix("/rest/v1")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 KNOWLEDGE_DIR = "knowledge"

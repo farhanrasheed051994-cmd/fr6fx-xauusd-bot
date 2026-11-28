@@ -8,7 +8,7 @@ import requests
 from google import genai
 from google.genai import types
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/").removesuffix("/rest/v1")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
@@ -17,7 +17,7 @@ PRIVATE_CHAT_ID = (os.environ.get("PRIVATE_TELEGRAM_ID") or os.environ.get("TELE
 
 def clean_tg_token(raw_tok):
     tok = re.sub(r"[\r\n\t\"']", "", str(raw_tok or "")).strip()
-    tok = re.sub(r"^https?://[^/]+/bot", "", tok)
+    tok = re.sub(r"^(?:https?://)?[^/]+/bot", "", tok)
     tok = re.sub(r"^bot(?=\d+:)", "", tok)
     return tok
 
