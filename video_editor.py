@@ -34,6 +34,7 @@ async def generate_voiceover(text, out_mp3):
     tts_text = (
         text.replace("FR6 FX", "F R 6 F X")
         .replace("FR6FX", "F R 6 F X")
+        .replace("DXY", "D X Y")
         .replace("link in bio", "link in bio")
     )
     voices = ("en-US-AndrewNeural", "en-US-ChristopherNeural", "en-GB-RyanNeural")

@@ -30,7 +30,7 @@ permissions:
 jobs:
   # JOB A: Sync new PDF/Markdown strategy rules to Supabase pgvector whenever knowledge/ changes
   sync-knowledge-base:
-    if: github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'knowledge/') || contains(join(github.event.head_commit.added, ','), 'knowledge/') || github.event.inputs.mode == 'train'
+    if: (github.event_name == 'push' && (contains(join(github.event.head_commit.modified, ','), 'knowledge/') || contains(join(github.event.head_commit.added, ','), 'knowledge/'))) || github.event.inputs.mode == 'train'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,6 +92,7 @@ jobs:
           python agents/weekend_pen.py
       - name: Commit Weekend Reels Queue
         run: |
+          mkdir -p state queue data
           git config user.name "FR6FX Automation Bot"
           git config user.email "bot@fr6fx.local"
           git add data/ state/ queue/
@@ -100,10 +101,11 @@ jobs:
             git pull --rebase --autostash
             git push
           fi
+
   # JOB D: Main Reels & Telegram Publishing Pipeline (Weekday MT5 Push + Weekend Queue)
   run-fr6fx-pipeline:
     if: >
-      (github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'data/mt5_data.json')) ||
+      (github.event_name == 'push' && (contains(join(github.event.head_commit.modified, ','), 'data/mt5_data.json') || contains(join(github.event.head_commit.added, ','), 'data/mt5_data.json'))) ||
       (github.event_name == 'schedule' && github.event.schedule == '0 8,13 * * 6,0') ||
       github.event.inputs.mode == 'weekday' ||
       github.event.inputs.mode == 'weekend_post' ||
@@ -184,6 +186,7 @@ jobs:
       - name: Phase 4 - Commit Run State, Queue Progress & Analytics Log
         if: always()
         run: |
+          mkdir -p state queue data
           git config user.name "FR6FX Automation Bot"
           git config user.email "bot@fr6fx.local"
           git add state/ queue/ data/

@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import json
 import xml.etree.ElementTree as ET
@@ -14,14 +15,20 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 PRIVATE_CHAT_ID = (os.environ.get("PRIVATE_TELEGRAM_ID") or os.environ.get("TELEGRAM_CHAT_ID", "")).strip()
 
 
+def clean_tg_token(raw_tok):
+    tok = re.sub(r"[\r\n\t\"']", "", str(raw_tok or "")).strip()
+    tok = re.sub(r"^https?://[^/]+/bot", "", tok)
+    tok = re.sub(r"^bot(?=\d+:)", "", tok)
+    return tok
+
+
 def fetch_usd_economic_calendar():
-    """Fetches today's High/Medium impact USD economic events from free ForexFactory XML feed."""
     url = "https://faireconomy.media"
     today_str = datetime.now(timezone.utc).strftime("%m-%d-%Y")
     events = []
     try:
-        resp = requests.get(url, timeout=12)
-        if resp.status_code == 200:
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=12)
+        if resp.status_code == 200 and resp.text.lstrip().startswith("<"):
             root = ET.fromstring(resp.text)
             for item in root.findall("event"):
                 country = (item.findtext("country") or "").strip()
@@ -39,12 +46,11 @@ def fetch_usd_economic_calendar():
 
 
 def fetch_gold_macro_headlines():
-    """Fetches latest XAUUSD / DXY / Fed macro headlines via Google News RSS."""
     rss_url = "https://google.com"
     headlines = []
     try:
-        resp = requests.get(rss_url, timeout=12)
-        if resp.status_code == 200:
+        resp = requests.get(rss_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=12)
+        if resp.status_code == 200 and resp.text.lstrip().startswith("<"):
             root = ET.fromstring(resp.text)
             for item in root.findall(".//item")[:5]:
                 title = (item.findtext("title") or "").strip()
@@ -56,12 +62,11 @@ def fetch_gold_macro_headlines():
 
 
 def retrieve_trained_rules(client, query_text, top_k=4):
-    """Queries Supabase pgvector gold_knowledge table for matching user strategy rules."""
     if not SUPABASE_URL or not SUPABASE_KEY or not client:
         return []
     try:
         emb_res = client.models.embed_content(
-            model="text-embedding-004",
+            model="gemini-embedding-001",
             contents=query_text,
             config=types.EmbedContentConfig(output_dimensionality=768),
         )
@@ -86,7 +91,6 @@ def retrieve_trained_rules(client, query_text, top_k=4):
         print(f"Supabase RAG lookup warning: {e}")
     return []
 def check_duplicate_alert(bias, key_level):
-    """Prevents spamming the exact same setup repeatedly."""
     if not SUPABASE_URL or not SUPABASE_KEY:
         return False
     try:
@@ -124,9 +128,9 @@ def log_alert_to_supabase(session, bias, key_level, summary):
 
 
 def send_private_copilot_alert(text):
-    if not TELEGRAM_BOT_TOKEN or not PRIVATE_CHAT_ID:
+    clean_tok = clean_tg_token(TELEGRAM_BOT_TOKEN)
+    if not clean_tok or not PRIVATE_CHAT_ID:
         return
-    clean_tok = TELEGRAM_BOT_TOKEN.replace("bot", "") if TELEGRAM_BOT_TOKEN.startswith("bot") else TELEGRAM_BOT_TOKEN
     url = f"https://telegram.org{clean_tok}/sendMessage"
     try:
         requests.post(
@@ -195,7 +199,7 @@ Return ONLY valid JSON:
 
     analysis = None
     if client:
-        for model_name in ("gemini-2.5-pro", "gemini-2.5-flash"):
+        for model_name in ("gemini-3.1-pro-preview", "gemini-3.8-flash", "gemini-3.5-flash-lite"):
             try:
                 resp = client.models.generate_content(
                     model=model_name,
@@ -204,10 +208,10 @@ Return ONLY valid JSON:
                 )
                 if resp and resp.text:
                     analysis = json.loads(resp.text)
-                    print(f"GoldBrain analysis complete via {model_name}")
+                    print(f"🧠 GoldBrain analysis complete via {model_name}")
                     break
             except Exception as e:
-                print(f"GoldBrain {model_name} warning: {e}")
+                print(f"⚠️ GoldBrain {model_name} warning: {e}")
 
     if not analysis:
         first_event = calendar_events[0] if calendar_events else "Technical liquidity rotation around Asia range & DXY flow"
@@ -241,7 +245,7 @@ Return ONLY valid JSON:
         if not check_duplicate_alert(analysis["institutional_bias"], key_lvl):
             send_private_copilot_alert(analysis["private_alert_html"])
             log_alert_to_supabase(session_name, analysis["institutional_bias"], key_lvl, analysis["top_catalyst"])
-            print("Private GoldBrain co-pilot alert sent!")
+            print("📲 Private GoldBrain co-pilot alert sent!")
 
     return analysis
 

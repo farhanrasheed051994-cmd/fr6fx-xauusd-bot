@@ -1,6 +1,5 @@
 import os
 import glob
-import json
 import time
 import requests
 from google import genai
@@ -38,7 +37,7 @@ def chunk_text(text, chunk_size=1100, overlap=180):
 
 def get_gemini_embedding(client, text):
     res = client.models.embed_content(
-        model="text-embedding-004",
+        model="gemini-embedding-001",
         contents=text,
         config=types.EmbedContentConfig(output_dimensionality=768),
     )
@@ -53,22 +52,19 @@ def store_chunk_in_supabase(title, content, embedding):
         "Content-Type": "application/json",
         "Prefer": "return=minimal",
     }
-    payload = {
-        "title": title,
-        "content": content,
-        "embedding": embedding,
-    }
-    resp = requests.post(url, headers=headers, json=payload, timeout=20)
+    resp = requests.post(
+        url,
+        headers=headers,
+        json={"title": title, "content": content, "embedding": embedding},
+        timeout=20,
+    )
     if resp.status_code not in (200, 201):
         raise RuntimeError(f"Supabase insert failed ({resp.status_code}): {resp.text[:200]}")
 
 
 def clear_existing_by_title(title):
     url = f"{SUPABASE_URL}/rest/v1/gold_knowledge?title=eq.{requests.utils.quote(title)}"
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-    }
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     requests.delete(url, headers=headers, timeout=15)
 
 
@@ -97,11 +93,11 @@ def train_from_knowledge_folder():
             continue
 
         clear_existing_by_title(fname)
-        for idx, ch in enumerate(chunks):
+        for ch in chunks:
             emb = get_gemini_embedding(client, ch)
             store_chunk_in_supabase(fname, ch, emb)
             total_chunks += 1
-            time.sleep(0.25)  # Stay safely within free Gemini embedding RPM
+            time.sleep(0.25)
 
         print(f"✅ Trained GoldBrain on '{fname}' ({len(chunks)} chunks)")
 

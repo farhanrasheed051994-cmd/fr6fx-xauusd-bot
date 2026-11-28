@@ -8,7 +8,6 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 
 def fetch_google_trending_gold_queries():
-    """Fetches real-time Google Autocomplete search queries for XAUUSD / Gold trading."""
     queries = []
     seeds = ["xauusd analysis", "gold price prediction", "xauusd strategy"]
     for seed in seeds:
@@ -16,7 +15,7 @@ def fetch_google_trending_gold_queries():
             url = f"http://google.com{requests.utils.quote(seed)}"
             resp = requests.get(url, timeout=8)
             if resp.status_code == 200:
-                suggestions = resp.json()
+                suggestions = resp.json()[1]
                 queries.extend(suggestions[:3])
         except Exception:
             pass
@@ -45,13 +44,13 @@ Return ONLY valid JSON:
   "yt_tags": ["xauusd", "gold trading", "smc trading", "xauusd analysis today", "12 more targeted tags"],
   "yt_pinned_comment": "Engaging question + CTA for pinned comment",
   "ig_fb_caption": "Punchy 3-line Instagram/Facebook Reels caption + 12 high-reach hashtags",
-  "top_keyword_used": "{live_queries if live_queries else 'xauusd analysis today'}"
+  "top_keyword_used": "{live_queries[0] if live_queries else 'xauusd analysis today'}"
 }}
 """
 
     seo = None
     if client:
-        for model_name in ("gemini-2.5-flash", "gemini-2.5-pro"):
+        for model_name in ("gemini-3.8-flash", "gemini-3.1-pro-preview", "gemini-3.5-flash-lite"):
             try:
                 resp = client.models.generate_content(
                     model=model_name,
@@ -76,7 +75,7 @@ Return ONLY valid JSON:
             "yt_tags": ["xauusd", "gold trading", "xauusd analysis today", "smc trading", "forex gold", "ict concepts"],
             "yt_pinned_comment": f"Where is Gold heading next in {session_name}? Drop your bias below! 👇",
             "ig_fb_caption": f"Gold {session_name} Liquidity Breakdown ({bias_label}) ⚡\n{catalyst}\n\n#xauusd #goldtrading #smartmoneyconcepts #forexsignals #priceaction #tradingview",
-            "top_keyword_used": live_queries if live_queries else "xauusd analysis today",
+            "top_keyword_used": live_queries[0] if live_queries else "xauusd analysis today",
         }
 
     os.makedirs("data", exist_ok=True)
