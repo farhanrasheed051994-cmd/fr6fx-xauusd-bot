@@ -1,23 +1,115 @@
-name: FR6FX Daily XAUUSD Reels & Telegram Automation
+name: FR6FX Multi-Agent XAUUSD & Reels Automation
 
 on:
   push:
     branches: [ main ]
     paths:
       - 'data/mt5_data.json'
-  workflow_dispatch:         # Manual Run button for testing anytime
+      - 'knowledge/**'
+  schedule:
+    # 1. Background GoldBrain Co-Pilot Monitor (Every 30 mins, Mon-Fri)
+    - cron: '*/30 * * * 1-5'
+    # 2. Saturday Morning TrendRadar + WeekendPen Queue Builder (05:00 UTC = 10:00 AM PKT)
+    - cron: '0 5 * * 6'
+    # 3. Saturday & Sunday Weekend Reel Publisher (08:00 & 13:00 UTC = 1:00 PM & 6:00 PM PKT)
+    - cron: '0 8,13 * * 6,0'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode (auto, weekday, monitor, weekend_prep, weekend_post, train)'
+        required: false
+        default: 'auto'
 
 concurrency:
   group: fr6fx-publish-pipeline
-  cancel-in-progress: false  # Never kill a live upload mid-way; queue safely instead
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
-  run-fr6fx-pipeline:
+  # JOB A: Sync new PDF/Markdown strategy rules to Supabase pgvector whenever knowledge/ changes
+  sync-knowledge-base:
+    if: github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'knowledge/') || contains(join(github.event.head_commit.added, ','), 'knowledge/') || github.event.inputs.mode == 'train'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+      - name: Train GoldBrain Knowledge Base in Supabase
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python agents/train_gold_brain.py
+
+  # JOB B: Background 30-Min GoldBrain Co-Pilot Monitor (Mon-Fri)
+  goldbrain-monitor:
+    if: (github.event_name == 'schedule' && github.event.schedule == '*/30 * * * 1-5') || github.event.inputs.mode == 'monitor'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+      - name: Run GoldBrain Background Analyst
+        env:
+          PYTHONUNBUFFERED: "1"
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PRIVATE_TELEGRAM_ID: ${{ secrets.PRIVATE_TELEGRAM_ID }}
+        run: python agents/gold_brain.py --monitor
+
+  # JOB C: Saturday Morning TrendRadar + WeekendPen Queue Builder
+  weekend-content-prep:
+    if: (github.event_name == 'schedule' && github.event.schedule == '0 5 * * 6') || github.event.inputs.mode == 'weekend_prep'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+      - name: Run TrendRadar & WeekendPen (Draft 4 Sat/Sun Reels)
+        env:
+          PYTHONUNBUFFERED: "1"
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python agents/trend_radar.py
+          python agents/weekend_pen.py
+      - name: Commit Weekend Reels Queue
+        run: |
+          git config user.name "FR6FX Automation Bot"
+          git config user.email "bot@fr6fx.local"
+          git add data/ state/ queue/
+          if ! git diff --staged --quiet; then
+            git commit -m "WeekendPen: Add 4 weekend Reels to queue [skip ci]"
+            git pull --rebase --autostash
+            git push
+          fi
+  # JOB D: Main Reels & Telegram Publishing Pipeline (Weekday MT5 Push + Weekend Queue)
+  run-fr6fx-pipeline:
+    if: >
+      (github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'data/mt5_data.json')) ||
+      (github.event_name == 'schedule' && github.event.schedule == '0 8,13 * * 6,0') ||
+      github.event.inputs.mode == 'weekday' ||
+      github.event.inputs.mode == 'weekend_post' ||
+      github.event.inputs.mode == 'auto'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
     steps:
       - name: Checkout FR6FX Repository
         uses: actions/checkout@v4
@@ -47,21 +139,33 @@ jobs:
             cd remotion && npm install --no-audit --no-fund
           fi
 
-      - name: Phase 1 - Run Multi-Timeframe MT5 SMC & AI Analysis
+      - name: Phase 1 - Run Multi-Agent SMC, Fundamental & SEO Analysis
         env:
           PYTHONUNBUFFERED: "1"
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           TELEGRAM_LINK: ${{ secrets.TELEGRAM_LINK }}
-        run: python analyze_session.py
+        run: |
+          if [ "${{ github.event.schedule }}" == "0 8,13 * * 6,0" ] || [ "${{ github.event.inputs.mode }}" == "weekend_post" ]; then
+            python analyze_session.py --weekend
+          else
+            python analyze_session.py
+          fi
 
       - name: Phase 2 - Render Animated Reel & Institutional Telegram Chart
         env:
           PYTHONUNBUFFERED: "1"
           TELEGRAM_LINK: ${{ secrets.TELEGRAM_LINK }}
-        run: python video_editor.py
+        run: |
+          if [ "${{ github.event.schedule }}" == "0 8,13 * * 6,0" ] || [ "${{ github.event.inputs.mode }}" == "weekend_post" ]; then
+            python video_editor.py --weekend
+          else
+            python video_editor.py
+          fi
 
-      - name: Phase 3 - Publish to Telegram, YouTube Shorts, Instagram & Facebook
+      - name: Phase 3 - Publish to YouTube, Instagram, Facebook & ChannelPilot Telegram
         env:
           PYTHONUNBUFFERED: "1"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -77,18 +181,16 @@ jobs:
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
         run: python publish_all.py
 
-      - name: Phase 4 - Commit Run State & Analytics Log
+      - name: Phase 4 - Commit Run State, Queue Progress & Analytics Log
         if: always()
         run: |
-          if [ -d "state" ]; then
-            git config user.name "FR6FX Automation Bot"
-            git config user.email "bot@fr6fx.local"
-            git add state/
-            if ! git diff --staged --quiet; then
-              git commit -m "Update FR6FX run state & analytics log [skip ci]"
-              git pull --rebase --autostash
-              git push
-            fi
+          git config user.name "FR6FX Automation Bot"
+          git config user.email "bot@fr6fx.local"
+          git add state/ queue/ data/
+          if ! git diff --staged --quiet; then
+            git commit -m "Update FR6FX run state, queue & analytics log [skip ci]"
+            git pull --rebase --autostash
+            git push
           fi
 
       - name: Alert Telegram on Pipeline Failure

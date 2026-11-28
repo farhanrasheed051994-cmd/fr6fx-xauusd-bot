@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import numpy as np
 import pandas as pd
@@ -107,7 +108,6 @@ def find_institutional_zones(df_window, atr, live_price):
 
     sup_list = []
     for i in range(2, len(df_window) - 2):
-        # Require bearish displacement candle after bullish OB candle
         if closes[i] > opens[i] and closes[i + 1] < opens[i + 1] and (opens[i + 1] - closes[i + 1]) >= atr * 0.5:
             ob_h = round(float(highs[i]), 2)
             ob_l = round(min(float(opens[i]), round(ob_h - zone_w, 2)), 2)
@@ -122,7 +122,6 @@ def find_institutional_zones(df_window, atr, live_price):
 
     dem_list = []
     for i in range(2, len(df_window) - 2):
-        # Require bullish displacement candle after bearish OB candle
         if closes[i] < opens[i] and closes[i + 1] > opens[i + 1] and (closes[i + 1] - opens[i + 1]) >= atr * 0.5:
             ob_l = round(float(lows[i]), 2)
             ob_h = round(max(float(opens[i]), round(ob_l + zone_w, 2)), 2)
@@ -146,7 +145,7 @@ def get_smc_market_data():
     df_h1 = load_mt5_df(raw["xau_h1"]) if raw.get("xau_h1") else None
 
     live_price = round(float(raw.get("gold_bid") or df_m5["close"].iloc[-1]), 2)
-    dxy_now = round(float(raw.get("dxy_bid") or df_dxy["close"].iloc[-1]), 2)
+    dxy_now = round(float(raw.get("dxy_bid") or df_dxy["close"].iloc[-1]), 3)
 
     if df_h1 is not None and len(df_h1) >= 20:
         h1_sh, h1_sl = find_swing_points(df_h1.tail(60), 3, 3)
@@ -178,7 +177,6 @@ def get_smc_market_data():
     equilibrium = round((sup_high + dem_low) / 2.0, 2)
     fvg = find_unmitigated_fvg(chart_df, live_price, min_gap=max(1.2, atr_m15 * 0.25))
 
-    # OTE (Optimal Trade Entry: 61.8% - 78.6% Fib pocket of dealing range)
     dealing_span = max(sup_high - dem_low, 8.0)
     bull_ote_high = round(sup_high - dealing_span * 0.618, 2)
     bull_ote_low = round(sup_high - dealing_span * 0.786, 2)
@@ -245,6 +243,8 @@ def get_smc_market_data():
     volatility_alert = last_bar_range >= (atr_m15 * 1.8) or abs(pct_change) >= 1.25
 
     return {
+        "is_weekend": "--weekend" in sys.argv,
+        "exported_utc": raw.get("exported_utc", ""),
         "live_price": live_price,
         "pct_change": pct_change,
         "atr_m15": round(atr_m15, 2),

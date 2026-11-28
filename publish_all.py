@@ -8,11 +8,12 @@ import requests
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+from seo_engine import build_seo_package
+from agents.channel_pilot import post_channel_update
 
 GOOGLE_TOKEN_URL = "https://" + ".".join(["oauth2", "googleapis", "com"]) + "/token"
 FB_GRAPH_BASE = "https://" + ".".join(["graph", "facebook", "com"]) + "/v21.0"
 FB_RUPLOAD_BASE = "https://" + ".".join(["rupload", "facebook", "com"]) + "/video-upload/v21.0"
-TG_API_BASE = "https://" + ".".join(["api", "telegram", "org"]) + "/bot"
 
 
 def get_secret(name):
@@ -30,63 +31,6 @@ def safe_json(resp, label):
     except Exception:
         print(f"❌ {label} Non-JSON Response (HTTP {resp.status_code}): {resp.text[:300]}")
         return {}
-
-
-def post_to_telegram_channel(chart_png_path, mentor_report):
-    bot_token = get_secret("TELEGRAM_BOT_TOKEN")
-    chat_id = get_secret("TELEGRAM_CHAT_ID")
-    if not bot_token or not chat_id:
-        print("⚠️ Telegram secrets missing—skipping Telegram post.")
-        return {"status": "SKIPPED"}
-
-    photo_url = f"{TG_API_BASE}{bot_token}/sendPhoto"
-    with open(chart_png_path, "rb") as img_file:
-        photo_resp = requests.post(
-            photo_url,
-            data={"chat_id": chat_id},
-            files={"photo": img_file},
-            timeout=25
-        ).json()
-
-    if photo_resp.get("ok"):
-        print(f"✅ Telegram Chart Image Posted to {chat_id}")
-    else:
-        print("❌ Telegram Chart Image Error:", photo_resp)
-
-    time.sleep(1.2)
-
-    msg_url = f"{TG_API_BASE}{bot_token}/sendMessage"
-    msg_resp = requests.post(
-        msg_url,
-        data={
-            "chat_id": chat_id,
-            "text": mentor_report[:4090],
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True
-        },
-        timeout=25
-    ).json()
-
-    if msg_resp.get("ok"):
-        msg_id = msg_resp.get("result", {}).get("message_id")
-        print(f"✅ Telegram Mentor Analysis Posted to {chat_id} (msg_id={msg_id})")
-        return {"status": "OK", "message_id": msg_id}
-
-    plain_text = re.sub(r"<[^>]+>", "", mentor_report)[:4090]
-    retry = requests.post(
-        msg_url,
-        data={
-            "chat_id": chat_id,
-            "text": plain_text,
-            "disable_web_page_preview": True
-        },
-        timeout=25
-    ).json()
-    print("✅ Telegram Plain Text Fallback Result:", retry)
-    return {
-        "status": "OK_FALLBACK" if retry.get("ok") else "ERROR",
-        "message_id": retry.get("result", {}).get("message_id"),
-    }
 
 
 def upload_youtube_short(video_path, title, description, tags=None, pinned_comment=None):
@@ -144,6 +88,8 @@ def upload_youtube_short(video_path, title, description, tags=None, pinned_comme
             print("⚠️ YouTube Comment Skipped:", ce)
 
     return {"status": "OK", "video_id": vid_id, "url": vid_url}
+
+
 def create_temp_public_url(video_path, release_tag):
     subprocess.run(["gh", "release", "delete", release_tag, "-y"], stderr=subprocess.DEVNULL)
     subprocess.run(
@@ -155,8 +101,6 @@ def create_temp_public_url(video_path, release_tag):
     fname = os.path.basename(video_path)
     gh_host = ".".join(["github", "com"])
     return f"https://{gh_host}/{repo}/releases/download/{release_tag}/{fname}"
-
-
 def upload_instagram_reel(video_url, caption):
     ig_id = get_secret("IG_USER_ID")
     token = get_secret("META_ACCESS_TOKEN")
@@ -245,14 +189,13 @@ def upload_facebook_reel(video_url, caption):
     return {"status": "OK" if fin_json.get("success") or video_id else "ERROR", "video_id": video_id, "detail": fin_json}
 
 
-def save_run_state(data, results):
+def save_run_state(data, seo, results):
     os.makedirs("state", exist_ok=True)
     smc = data.get("smc", {})
-    seo = data.get("seo", {})
     record = {
         "published_utc": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
         "session": data.get("session"),
-        "hook_title": data.get("hook_title"),
+        "hook_title": data.get("hook_headline") or data.get("hook_title"),
         "yt_title": seo.get("yt_title"),
         "live_price": smc.get("live_price"),
         "bias_label": smc.get("bias_label"),
@@ -306,31 +249,52 @@ def main():
     with open("assets/analysis_output.json", "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    seo = data.get("seo", {})
-    tg_report = seo.get("tg_report_seo") or data.get("telegram_report", "")
+    smc = data.get("smc", {})
+    session_name = data.get("session", "LONDON SESSION")
+
+    # 1. Load ReachBoost SEO package if present, otherwise fall back to seo_engine
+    if os.path.exists("data/seo_package.json"):
+        with open("data/seo_package.json", "r", encoding="utf-8") as f:
+            rb_seo = json.load(f)
+        seo = {
+            "yt_title": rb_seo.get("yt_title", f"XAUUSD {session_name} Setup #Shorts"),
+            "yt_description": rb_seo.get("yt_description", ""),
+            "yt_tags": rb_seo.get("yt_tags", []),
+            "yt_pinned_comment": rb_seo.get("yt_pinned_comment", ""),
+            "ig_caption": rb_seo.get("ig_fb_caption", ""),
+            "fb_caption": rb_seo.get("ig_fb_caption", ""),
+        }
+        print("📦 Loaded ReachBoost SEO package from data/seo_package.json")
+    else:
+        seo = data.get("seo") or build_seo_package(smc, session_name, data)
+
     results = {}
+    yt_url = ""
 
-    if os.path.exists("assets/telegram_chart.png") and tg_report:
-        try:
-            results["telegram"] = post_to_telegram_channel("assets/telegram_chart.png", tg_report)
-        except Exception as e:
-            print("❌ Telegram Post Error:", e)
-            results["telegram"] = {"status": "ERROR", "detail": str(e)}
-
+    # 2. Publish Reel to YouTube, Instagram, and Facebook first so we get the live YouTube URL
     if os.path.exists("assets/final_reel.mp4"):
         reel_res = broadcast_reel(
             "assets/final_reel.mp4",
             seo["yt_title"],
             seo["yt_description"],
             seo.get("yt_tags"),
-            seo.get("None"),
+            seo.get("yt_pinned_comment"),
             seo["ig_caption"],
             seo["fb_caption"],
             "fr6fx-temp-main"
         )
         results.update(reel_res)
+        yt_url = reel_res.get("youtube", {}).get("url", "")
 
-    save_run_state(data, results)
+    # 3. Hand off to Agent 6 (ChannelPilot) to publish chart, reel & weekend poll to Telegram
+    try:
+        tg_ok = post_channel_update("assets/final_reel.mp4", "assets/telegram_chart.png", data, yt_url=yt_url)
+        results["telegram"] = {"status": "OK" if tg_ok else "SKIPPED"}
+    except Exception as e:
+        print("❌ ChannelPilot Error:", e)
+        results["telegram"] = {"status": "ERROR", "detail": str(e)}
+
+    save_run_state(data, seo, results)
     print("📊 Run state saved to state/last_run.json")
 
 

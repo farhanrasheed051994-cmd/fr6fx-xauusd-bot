@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import edge_tts
 from faster_whisper import WhisperModel
 from PIL import Image, ImageDraw, ImageFont
+from chart_renderer import build_progressive_chart_stages
 
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
@@ -98,7 +99,6 @@ def extract_word_captions(audio_path):
             i += 1
             continue
 
-        # Merge split 4-digit Gold prices like ("3", "651") or ("36", "51") -> "3651"
         if (
             i + 1 < len(raw_words)
             and cur.isdigit()
@@ -200,7 +200,7 @@ def build_composite_stage_frame(smc, session_name, hook_title, stage_png, out_pn
     f_hook = load_font(FONT_BOLD, 40)
     f_meta = load_font(FONT_BOLD, 22)
 
-    hook_clean = str(hook_title).upper()[:22]
+    hook_clean = str(hook_title).upper()[:28]
     hw = draw.textlength(hook_clean, font=f_hook)
     pill_w = int(hw + 64)
     px1 = int((1080 - pill_w) * 0.5)
@@ -284,7 +284,7 @@ def render_progressive_reel(smc, session_name, hook_title, spoken_script, out_mp
     for st_png, fr_png, _, pct in stages_spec:
         build_composite_stage_frame(smc, session_name, hook_title, st_png, fr_png, progress_pct=pct)
 
-    d1, d2, d3, d4, d5 = [s for s in stages_spec]
+    d1, d2, d3, d4, d5 = [s[2] for s in stages_spec]
     off1, off2, off3, off4 = round(t2, 2), round(t3, 2), round(t4, 2), round(t5, 2)
 
     f1, f2, f3, f4, f5 = [max(int(d * 60) + 15, 60) for d in (d1, d2, d3, d4, d5)]
@@ -345,7 +345,7 @@ def render_progressive_reel(smc, session_name, hook_title, spoken_script, out_mp
     print(f"🎬 60fps TradingView-Style Motion Reel exported: {out_mp4}")
 
 
-def render_with_remotion_or_fallback(smc, session_name, hook_title, spoken_script, out_mp4):
+def render_with_remotion_or_fallback(smc, session_name, hook_title, spoken_script, out_mp4, chart_focus=None):
     os.makedirs("assets", exist_ok=True)
     voice_mp3 = "assets/voiceover.mp3"
     asyncio.run(generate_voiceover(spoken_script, voice_mp3))
@@ -374,6 +374,7 @@ def render_with_remotion_or_fallback(smc, session_name, hook_title, spoken_scrip
                 "durationSec": total_dur,
                 "stageTimes": [t2, t3, t4, t5],
                 "smc": smc,
+                "chartFocus": chart_focus or {},
                 "candles15m": to_tv_bars(mt5_raw.get("xau_m15", [])),
                 "candles5m": to_tv_bars(mt5_raw.get("xau_m5", [])),
                 "captions": words,
@@ -392,7 +393,6 @@ def render_with_remotion_or_fallback(smc, session_name, hook_title, spoken_scrip
                 cwd="remotion",
                 check=True,
             )
-            # Normalize MP4 with +faststart & 48kHz AAC so Instagram Reels ingests 100% reliably
             subprocess.run(
                 [
                     "ffmpeg", "-y", "-i", raw_remotion,
@@ -421,15 +421,17 @@ def main():
 
     smc = data["smc"]
     session_name = data.get("session", "LONDON SESSION")
-    date_label = data.get("date_label", "")
-    hook_title = data.get("hook_title", "GOLD LIQUIDITY MAP")
-    spoken_script = data.get("spoken_script", "")
+    date_label = data.get("date_label") or datetime.now(timezone.utc).strftime("%d %b %Y")
+    hook_title = data.get("hook_headline") or data.get("hook_title", "GOLD LIQUIDITY MAP")
+    spoken_script = data.get("voiceover_script") or data.get("spoken_script", "")
+    chart_focus = data.get("chart_focus", {})
 
+    build_progressive_chart_stages(smc)
     export_telegram_chart_graphic(
         smc, session_name, date_label, "assets/stage_5.png", "assets/telegram_chart.png"
     )
     render_with_remotion_or_fallback(
-        smc, session_name, hook_title, spoken_script, "assets/final_reel.mp4"
+        smc, session_name, hook_title, spoken_script, "assets/final_reel.mp4", chart_focus=chart_focus
     )
 
 

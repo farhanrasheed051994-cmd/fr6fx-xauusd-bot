@@ -9,3 +9,4 @@ gTTS
 faster-whisper
 google-api-python-client
 google-auth-oauthlib
+pypdf
